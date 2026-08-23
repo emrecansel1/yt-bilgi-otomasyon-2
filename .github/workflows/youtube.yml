@@ -92,9 +92,10 @@ jobs:
           fi
 
           echo "✅ Model bulundu: $MODEL_FILE"
-          ls -lh "$MODEL_FILE"          echo "=== Piper test ==="
-          printf '%s
-' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
+          ls -lh "$MODEL_FILE"
+
+          echo "=== Piper test ==="
+          printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
             -m "$MODEL_FILE" \
             -f "$RUNNER_TEMP/test.wav"
 
