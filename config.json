@@ -1,0 +1,19 @@
+{
+  "kanal_adi": "DAHİLER VE KEŞİFLER",
+  "video": {
+    "min_sure_dakika": 15,
+    "hedef_sure_dakika": 18,
+    "genislik": 1920,
+    "yukseklik": 1080,
+    "fps": 30
+  },
+  "icerik": {
+    "dil": "Türkçe",
+    "kategori": "Tarihteki önemli bilim insanları",
+    "gorsel_degisimi_saniye": 8
+  },
+  "youtube": {
+    "privacy": "public",
+    "category_id": "27"
+  }
+}

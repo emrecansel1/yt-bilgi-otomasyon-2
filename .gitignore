@@ -1,0 +1,13 @@
+token.json
+client_secrets.json
+*.bak
+*.bak2
+__pycache__/
+*.pyc
+output/*.mp4
+output/*.wav
+output/*.raw
+output/*.txt
+output/*.json
+models/*.onnx
+models/*.onnx.json
