@@ -23,22 +23,71 @@ jobs:
           python-version: '3.11'
 
       - name: Sistem paketlerini kur
+        shell: bash
         run: |
+          set -euxo pipefail
+
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libespeak-ng1
-          echo "Piper gerçek TTS binary kuruluyor..."
-          wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz -O piper.tar.gz
-          tar -xzf piper.tar.gz
-          sudo cp -r piper/* /usr/local/
-          sudo chmod +x /usr/local/piper
-          echo "/usr/local" | sudo tee /etc/ld.so.conf.d/piper.conf
+          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1
+
+          echo "=== Piper kuruluyor ==="
+
+          rm -rf "$RUNNER_TEMP/piper"
+          mkdir -p "$RUNNER_TEMP/piper"
+
+          wget -q --show-progress \
+            https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
+            -O "$RUNNER_TEMP/piper.tar.gz"
+
+          tar -xzf "$RUNNER_TEMP/piper.tar.gz" -C "$RUNNER_TEMP/piper"
+
+          echo "=== Piper araniyor ==="
+          find "$RUNNER_TEMP/piper" -maxdepth 3 -type f -print
+
+          PIPER_EXE="$(find "$RUNNER_TEMP/piper" -type f -name piper -print -quit)"
+
+          if [ -z "$PIPER_EXE" ]; then
+            echo "Piper binary bulunamadi!"
+            exit 1
+          fi
+
+          echo "Piper binary: $PIPER_EXE"
+
+          sudo mkdir -p /opt/piper
+          sudo cp -a "$(dirname "$PIPER_EXE")"/. /opt/piper/
+
+          sudo chmod +x /opt/piper/piper
+
+          # Piper'ın kendi shared library klasörlerini bul
+          sudo find /opt/piper -type f \
+            \( -name "*.so" -o -name "*.so.*" \) \
+            -exec sh -c 'echo "$(dirname "$1")"' _ {} \; \
+            | sort -u \
+            | sudo tee /etc/ld.so.conf.d/piper.conf
+
+          echo "/opt/piper" | sudo tee -a /etc/ld.so.conf.d/piper.conf
+
           sudo ldconfig
-          /usr/local/piper --help
-          echo "=== PIPER DOSYALARI ==="
-          ls -lah /usr/local/piper
-          echo "=== PIPER MODEL TESTİ ==="
-          /usr/local/piper -m "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" -f /tmp/test.raw -- "Merhaba, bu bir test sesidir."
-          ls -lh /tmp/test.raw
+
+          echo "=== Piper binary ==="
+          /opt/piper/piper --help || true
+
+          echo "=== Piper kutuphaneleri ==="
+          ldd /opt/piper/piper
+
+          echo "=== Piper test ==="
+
+          /opt/piper/piper \
+            -m "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" \
+            -f "$RUNNER_TEMP/test.raw" \
+            -- "Merhaba, bu Piper ses testidir."
+
+          test -s "$RUNNER_TEMP/test.raw"
+
+          echo "Piper test BASARILI."
+
+          echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
 
       - name: Python paketlerini kur
         run: |
