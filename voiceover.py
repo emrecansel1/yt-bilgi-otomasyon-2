@@ -76,7 +76,7 @@ def create_voice(text_file, output_wav):
 
     subprocess.run(
         [
-            "piper",
+            "/usr/local/piper",
             "-m", MODEL,
             "-f", raw_file,
             "--",
