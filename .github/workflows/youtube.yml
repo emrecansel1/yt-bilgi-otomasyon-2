@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          sudo apt-get install -y ./piper.deb
+          sudo apt-get install -y piper
 
       - name: Python paketlerini kur
         run: |
