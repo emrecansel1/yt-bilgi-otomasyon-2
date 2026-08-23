@@ -75,16 +75,31 @@ jobs:
           echo "=== Piper kutuphaneleri ==="
           ldd /opt/piper/piper
 
-          echo "=== Piper test ==="
+          echo "=== MODEL DOSYASI ARANIYOR ==="
+          MODEL_FILE=""
+          for f in "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx"                    "$GITHUB_WORKSPACE/tr_TR-dfki-medium.onnx"                    "$GITHUB_WORKSPACE/models/"*.onnx; do
+            if [ -f "$f" ]; then
+              MODEL_FILE="$f"
+              break
+            fi
+          done
 
-          /opt/piper/piper \
-            -m "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" \
-            -f "$RUNNER_TEMP/test.raw" \
-            -- "Merhaba, bu Piper ses testidir."
+          if [ -z "$MODEL_FILE" ]; then
+            echo "❌ Piper modeli bulunamadı!"
+            echo "=== WORKSPACE MODELLER ==="
+            find "$GITHUB_WORKSPACE" -maxdepth 4 -type f \( -name "*.onnx" -o -name "*.onnx.json" \) -print
+            exit 1
+          fi
+
+          echo "✅ Model bulundu: $MODEL_FILE"
+          ls -lh "$MODEL_FILE"
+
+          echo "=== Piper test ==="
+          /opt/piper/piper             -m "$MODEL_FILE"             -f "$RUNNER_TEMP/test.raw"             -- "Merhaba, bu Piper ses testidir."
 
           test -s "$RUNNER_TEMP/test.raw"
-
           echo "Piper test BASARILI."
+
 
           echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
           echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
