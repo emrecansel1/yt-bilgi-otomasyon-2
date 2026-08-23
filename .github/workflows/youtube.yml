@@ -95,14 +95,16 @@ jobs:
           ls -lh "$MODEL_FILE"
 
           echo "=== Piper test ==="
-          /opt/piper/piper             -m "$MODEL_FILE"             -f "$RUNNER_TEMP/test.raw"             -- "Merhaba, bu Piper ses testidir."
+          printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper             -m "$MODEL_FILE"             -f "$RUNNER_TEMP/test.wav"
 
-          test -s "$RUNNER_TEMP/test.raw"
+          test -s "$RUNNER_TEMP/test.wav"
+file "$RUNNER_TEMP/test.wav"
+ls -lh "$RUNNER_TEMP/test.wav"
           echo "Piper test BASARILI."
 
 
           echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
-          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" >> "$GITHUB_ENV"
 
       - name: Python paketlerini kur
         run: |
