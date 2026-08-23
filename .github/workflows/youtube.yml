@@ -95,11 +95,20 @@ jobs:
           ls -lh "$MODEL_FILE"
 
           echo "=== Piper test ==="
-          printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper             -m "$MODEL_FILE"             -f "$RUNNER_TEMP/test.wav"
+          printf '%s
+' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
+            -m "$MODEL_FILE" \
+            -f "$RUNNER_TEMP/test.wav"
 
-          test -s "$RUNNER_TEMP/test.wav"
-file "$RUNNER_TEMP/test.wav"
-ls -lh "$RUNNER_TEMP/test.wav"
+          if [ ! -s "$RUNNER_TEMP/test.wav" ]; then
+            echo "❌ Piper WAV dosyası oluşturulamadı!"
+            exit 1
+          fi
+
+          echo "=== Piper WAV kontrol ==="
+          file "$RUNNER_TEMP/test.wav"
+          ls -lh "$RUNNER_TEMP/test.wav"
+
           echo "Piper test BASARILI."
 
 
