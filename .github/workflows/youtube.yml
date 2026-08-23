@@ -92,9 +92,7 @@ jobs:
           fi
 
           echo "✅ Model bulundu: $MODEL_FILE"
-          ls -lh "$MODEL_FILE"
-
-          echo "=== Piper test ==="
+          ls -lh "$MODEL_FILE"          echo "=== Piper test ==="
           printf '%s
 ' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
             -m "$MODEL_FILE" \
@@ -113,7 +111,7 @@ jobs:
 
 
           echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
-          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
 
       - name: Python paketlerini kur
         run: |
