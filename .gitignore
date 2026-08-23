@@ -11,3 +11,5 @@ output/*.txt
 output/*.json
 models/*.onnx
 models/*.onnx.json
+
+token_eski.json
