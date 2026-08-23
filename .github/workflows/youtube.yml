@@ -25,7 +25,7 @@ jobs:
       - name: Sistem paketlerini kur
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg libespeak-ng1
           echo "Piper gerçek TTS binary kuruluyor..."
           wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz -O piper.tar.gz
           tar -xzf piper.tar.gz
