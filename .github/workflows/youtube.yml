@@ -34,6 +34,11 @@ jobs:
           echo "/usr/local" | sudo tee /etc/ld.so.conf.d/piper.conf
           sudo ldconfig
           /usr/local/piper --help
+          echo "=== PIPER DOSYALARI ==="
+          ls -lah /usr/local/piper
+          echo "=== PIPER MODEL TESTİ ==="
+          /usr/local/piper -m "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" -f /tmp/test.raw -- "Merhaba, bu bir test sesidir."
+          ls -lh /tmp/test.raw
 
       - name: Python paketlerini kur
         run: |
