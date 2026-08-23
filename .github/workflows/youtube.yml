@@ -29,10 +29,11 @@ jobs:
           echo "Piper gerçek TTS binary kuruluyor..."
           wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz -O piper.tar.gz
           tar -xzf piper.tar.gz
-          sudo cp piper/piper /usr/local/bin/piper
-          sudo chmod +x /usr/local/bin/piper
-          rm -rf piper piper.tar.gz
-          piper --help
+          sudo cp -r piper/* /usr/local/
+          sudo chmod +x /usr/local/piper
+          echo "/usr/local" | sudo tee /etc/ld.so.conf.d/piper.conf
+          sudo ldconfig
+          /usr/local/piper --help
 
       - name: Python paketlerini kur
         run: |
