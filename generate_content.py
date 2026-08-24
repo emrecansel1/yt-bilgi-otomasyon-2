@@ -1,137 +1,207 @@
 import os
 import json
-import requests
-import sys
+import re
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
+TOKEN = "token.json"
+VIDEO = os.path.join(OUT, "current_final.mp4")
+CONFIG = "config.json"
+CONTENT = os.path.join(OUT, "current_content.txt")
 
-if not API_KEY:
-    raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
-if len(sys.argv) < 2:
-    raise RuntimeError(
-        "Kullanım: python generate_content.py \"KONU\""
+
+def load_config():
+    if not os.path.exists(CONFIG):
+        return {}
+
+    try:
+        with open(CONFIG, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def parse_metadata_from_content():
+    """current_content.txt içindeki METADATA bölümünden
+    BAŞLIK, AÇIKLAMA, ETİKETLER bilgilerini çıkarır."""
+
+    if not os.path.exists(CONTENT):
+        return None, None, None
+
+    try:
+        with open(CONTENT, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return None, None, None
+
+    title = None
+    description = None
+    tags = None
+
+    title_match = re.search(
+        r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nAÇIKLAMA:)",
+        text,
+        re.DOTALL
+    )
+    if title_match:
+        title = title_match.group(1).strip()
+
+    desc_match = re.search(
+        r"AÇIKLAMA:\s*\n?(.+?)(?:\n\s*\n|\nETİKETLER:)",
+        text,
+        re.DOTALL
+    )
+    if desc_match:
+        description = desc_match.group(1).strip()
+
+    tags_match = re.search(
+        r"ETİKETLER:\s*\n?(.+?)$",
+        text,
+        re.DOTALL
+    )
+    if tags_match:
+        raw_tags = tags_match.group(1).strip()
+        tags = [
+            t.strip()
+            for t in raw_tags.split(",")
+            if t.strip()
+        ]
+
+    return title, description, tags
+
+
+def upload():
+    print("=" * 40)
+    print("📺 NORMAL YOUTUBE VİDEO YÜKLEYİCİ")
+    print("=" * 40)
+
+    if not os.path.exists(TOKEN):
+        raise SystemExit("❌ token.json bulunamadı.")
+
+    if not os.path.exists(VIDEO):
+        raise SystemExit(f"❌ Video bulunamadı: {VIDEO}")
+
+    with open(TOKEN, encoding="utf-8") as f:
+        token_data = json.load(f)
+
+    creds = Credentials.from_authorized_user_info(
+        token_data,
+        SCOPES
     )
 
-KONU = " ".join(sys.argv[1:]).strip()
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
+        else:
+            raise SystemExit("❌ YouTube token geçersiz veya yenilenemiyor.")
 
-URL = (
-    "https://generativelanguage.googleapis.com/"
-    "v1beta/models/gemini-3.5-flash-lite:generateContent"
-)
+    youtube = build(
+        "youtube",
+        "v3",
+        credentials=creds
+    )
 
-PROMPT = f"""
-Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı için çalışan
-profesyonel tarih, bilim ve bilgi belgeseli içerik üreticisisin.
+    config = load_config()
+    youtube_config = config.get("youtube", {})
 
-KONU:
-{KONU}
+    parsed_title, parsed_description, parsed_tags = (
+        parse_metadata_from_content()
+    )
 
-Bu konu hakkında Türkçe, en az 15 dakikalık,
-seslendirmeye uygun kaliteli bir YouTube uzun video içeriği hazırla.
+    title = parsed_title or config.get(
+        "youtube_title",
+        "İlginç Bilgiler | Bilim ve Tarih"
+    )
 
-AMAÇ:
-İzleyicinin ilk saniyeden itibaren merak etmesini ve videonun
-sonuna kadar izlemek istemesini sağlamak.
+    description = parsed_description or config.get(
+        "youtube_description",
+        "Bilim, tarih ve dünyadan ilginç bilgiler."
+    )
 
-KURALLAR:
+    tags = parsed_tags or config.get(
+        "youtube_tags",
+        ["bilgi", "bilim", "tarih", "ilginç bilgiler"]
+    )
 
-1. Bilgi uydurma.
-2. Tarihleri ve olayları mümkün olduğunca doğru aktar.
-3. Doğrulanamayan bilgileri kesin gerçek gibi sunma.
-4. Doğal, ciddi ve profesyonel Türkçe belgesel anlatımı kullan.
-5. İlk 20 saniye çok güçlü bir merak unsuru içersin.
-6. Gereksiz tekrar yapma.
-7. Konuyu mantıklı bir akışla anlat.
-8. Bilimsel konuları herkesin anlayabileceği şekilde açıkla.
-9. Önemli kişiler, tarihler, yerler ve olaylara yer ver.
-10. Son bölümde konunun insanlık açısından önemini anlat.
-11. Metin seslendirmeye uygun olsun.
-12. En az 15 dakikalık seslendirmeye yetecek uzunlukta olsun.
+    privacy = youtube_config.get(
+        "privacy",
+        "public"
+    )
 
-Ayrıca videonun sonunda ayrı bir METADATA bölümü oluştur.
+    body = {
+        "snippet": {
+            "title": title[:100],
+            "description": description,
+            "tags": tags,
+            "categoryId": str(
+                youtube_config.get("category_id", "27")
+            ),
+            "defaultLanguage": "tr",
+            "defaultAudioLanguage": "tr"
+        },
+        "status": {
+            "privacyStatus": privacy,
+            "selfDeclaredMadeForKids": False
+        }
+    }
 
-Şu formatı kullan:
+    media = MediaFileUpload(
+        VIDEO,
+        mimetype="video/mp4",
+        resumable=True
+    )
 
-=== SESLENDİRME METNİ ===
-Buraya yalnızca anlatıcının okuyacağı bilgi metnini yaz.
+    print("📤 Normal YouTube videosu yükleniyor...")
+    print("🎬 Başlık:", title)
+    print("📁 Video:", VIDEO)
+    print("📺 Format: 1920x1080")
+    print("⏱️ Uzun video modu")
+    print()
 
-ÖNEMLİ:
-Bu bir film senaryosu değildir.
-Sahne yazma.
-Kamera hareketi yazma.
-Karakter hareketi yazma.
-Müzik veya ses efekti yazma.
-Parantez kullanma.
-Köşeli parantez kullanma.
-"[Hüzünlü müzik]", "(kamera yaklaşır)", "Sahne 1" gibi ifadeler kesinlikle yazma.
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body=body,
+        media_body=media
+    )
 
-Sadece seçilen konuyu doğrudan anlat.
-Metin doğrudan TTS sistemine gönderileceği için okuyucu yalnızca gerçek anlatım cümlelerini görmelidir.
+    response = None
 
-Örnek:
-"Albert Einstein, modern fiziğin en önemli bilim insanlarından biriydi. 1879 yılında Almanya'da doğdu..."
+    while response is None:
+        status, response = request.next_chunk()
 
-Yanlış:
-"[Hüzünlü müzik başlar.] Einstein odasında oturuyordu. Kamera yavaşça ona yaklaşır..."
+        if status:
+            print(
+                f"📊 Yükleme: "
+                f"{int(status.progress() * 100)}%"
+            )
 
-ÇIKTI SADECE SESLENDİRME METNİ OLMALI.
+    video_id = response.get("id")
 
-=== METADATA ===
-BAŞLIK:
-YouTube için merak uyandırıcı ama yanıltıcı olmayan başlık.
+    if not video_id:
+        raise SystemExit(
+            "❌ YouTube video ID döndürmedi."
+        )
 
-AÇIKLAMA:
-Videonun açıklaması.
+    print()
+    print("=" * 40)
+    print("✅ NORMAL YOUTUBE VİDEOSU YÜKLENDİ")
+    print("=" * 40)
+    print("🆔 Video ID:", video_id)
+    print(
+        "🔗 https://www.youtube.com/watch?v="
+        + video_id
+    )
+    print("=" * 40)
 
-ETİKETLER:
-Konuya uygun 15-25 Türkçe YouTube etiketi.
-Etiketleri virgülle ayır.
+    return video_id
 
-Çıktıyı Türkçe üret.
-"""
 
-response = requests.post(
-    URL,
-    params={"key": API_KEY},
-    json={
-        "contents": [
-            {
-                "parts": [
-                    {"text": PROMPT}
-                ]
-            }
-        ]
-    },
-    timeout=180
-)
-
-print("HTTP:", response.status_code)
-
-if not response.ok:
-    print(response.text)
-    raise SystemExit(1)
-
-data = response.json()
-
-text = data["candidates"][0]["content"]["parts"][0]["text"]
-
-os.makedirs(OUT, exist_ok=True)
-
-with open(
-    os.path.join(OUT, "current_content.txt"),
-    "w",
-    encoding="utf-8"
-) as f:
-    f.write(text)
-
-print()
-print("================================")
-print("✅ İÇERİK OLUŞTURULDU")
-print("================================")
-print("Konu:", KONU)
-print("Dosya:", os.path.join(OUT, "current_content.txt"))
-print("Karakter:", len(text))
+if __name__ == "__main__":
+    upload()
