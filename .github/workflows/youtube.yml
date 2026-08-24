@@ -132,7 +132,7 @@ jobs:
 
       - name: Video oluştur ve yükle
         env:
-          GEMINI_API_KEY: ${{ SnhBx0ZmjPKG7oY3miYB6O6WKeE4p8xkjSw8bbN4ldmo4qAdjNpiyhFp }}
-          PEXELS_API_KEY: ${{ SnhBx0ZmjPKG7oY3miYB6O6WKeE4p8xkjSw8bbN4ldmo4qAdjNpiyhFp }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python auto_video.py
