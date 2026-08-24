@@ -3,8 +3,8 @@ import subprocess
 import sys
 import re
 
-BASE = os.path.expanduser("~/yt_bilgi_uzun")
-MODEL = os.path.join(BASE, "models", "tr_TR-dfki-medium.onnx")
+PIPER_VOICE_PATH = os.environ.get("PIPER_VOICE_PATH", ".")
+MODEL = os.path.join(PIPER_VOICE_PATH, "tr_TR-dfki-medium.onnx")
 
 def clean_text(text):
     bad_patterns = [
