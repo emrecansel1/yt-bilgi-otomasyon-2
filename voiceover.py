@@ -1,4 +1,3 @@
-cd ~/yt_bilgi_uzun && cat > voiceover.py <<'PY'
 import os
 import subprocess
 import sys
