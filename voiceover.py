@@ -96,9 +96,3 @@ if __name__ == "__main__":
         sys.exit(1)
 
     create_voice(sys.argv[1], sys.argv[2])
-PY
-
-git add voiceover.py
-git commit -m "Fix Piper voiceover WAV generation"
-git push
-    
