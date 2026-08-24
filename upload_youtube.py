@@ -7,10 +7,9 @@ from googleapiclient.http import MediaFileUpload
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 
-TOKEN = os.path.join(BASE, "token.json")
+TOKEN = "token.json"
 VIDEO = os.path.join(OUT, "current_final.mp4")
-CONFIG = os.path.join(BASE, "config.json")
-
+CONFIG = "config.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 
