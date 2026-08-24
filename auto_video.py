@@ -190,6 +190,20 @@ def main():
         raise SystemExit("❌ Final video oluşmadı.")
 
     # --------------------------------------------------
+    # 6. YOUTUBE'A YÜKLE
+    # --------------------------------------------------
+
+    print()
+    print("📤 6/6 YOUTUBE'A YÜKLENİYOR...")
+
+    run(
+        [
+            sys.executable,
+            "upload_youtube.py"
+        ],
+        "YOUTUBE YÜKLEYİCİ"
+    )
+    # --------------------------------------------------
     # TEMİZLİK
     # --------------------------------------------------
 
