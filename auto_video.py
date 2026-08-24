@@ -128,7 +128,7 @@ def main():
     temp_script = os.path.join(BASE, "_auto_visual.py")
 
     with open(
-        os.path.join(BASE, "unique_visual_video.py"),
+        "unique_visual_video.py",
         encoding="utf-8"
     ) as f:
         code = f.read()
