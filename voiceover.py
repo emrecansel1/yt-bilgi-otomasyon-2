@@ -1,18 +1,13 @@
+cd ~/yt_bilgi_uzun && cat > voiceover.py <<'PY'
 import os
 import subprocess
 import sys
 import re
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
-MODEL = "tr_TR-dfki-medium"
-
-os.environ["PIPER_VOICE_PATH"] = os.path.join(BASE, "models")
-
+MODEL = os.path.join(BASE, "models", "tr_TR-dfki-medium.onnx")
 
 def clean_text(text):
-    import re
-
-    # Tüm senaryo/metadata başlıklarını ve satırlarını kaldır
     bad_patterns = [
         r'(?im)^.*seslendirme metni.*$',
         r'(?im)^.*metadata.*$',
@@ -36,80 +31,75 @@ def clean_text(text):
     for pattern in bad_patterns:
         text = re.sub(pattern, '', text)
 
-    # Parantez içlerini kaldır
     text = re.sub(r'\[[^\]]*\]', ' ', text)
     text = re.sub(r'\([^)]*\)', ' ', text)
     text = re.sub(r'\{[^}]*\}', ' ', text)
-
-    # Markdown ve gereksiz semboller
     text = re.sub(r'[*_`~#]+', ' ', text)
     text = re.sub(r'https?://\S+|www\.\S+', ' ', text)
-
-    # Boşlukları düzelt
     text = re.sub(r'[ \t]+', ' ', text)
     text = re.sub(r'\n+', ' ', text)
 
     return text.strip()
 
+
 def create_voice(text_file, output_wav):
     if not os.path.isfile(text_file):
         raise FileNotFoundError(f"Senaryo bulunamadı: {text_file}")
 
-    raw_file = output_wav.replace(".wav", ".raw")
+    if not os.path.isfile(MODEL):
+        raise FileNotFoundError(f"Piper modeli bulunamadı: {MODEL}")
 
-    print("🎙️ Piper Türkçe ses oluşturuyor...")
+    piper = os.environ.get("PIPER_BIN", "/opt/piper/piper")
+
+    if not os.path.isfile(piper):
+        raise FileNotFoundError(f"Piper bulunamadı: {piper}")
 
     with open(text_file, "r", encoding="utf-8") as f:
-        text = f.read().strip()
-
-    if not text:
-        raise RuntimeError("Senaryo dosyası boş.")
-
-    # TTS'ye göndermeden ÖNCE temizle
-    text = clean_text(text)
+        text = clean_text(f.read())
 
     if not text:
         raise RuntimeError("Temizleme sonrası seslendirilecek metin kalmadı.")
 
-    print("🧹 TTS metni temizlendi.")
+    print("🎙️ Piper Türkçe ses oluşturuyor...")
     print("📝 Karakter sayısı:", len(text))
+    print("🤖 Model:", MODEL)
+    print("🔧 Piper:", piper)
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_wav)), exist_ok=True)
 
     subprocess.run(
         [
-            os.environ.get("PIPER_BIN", "/usr/local/bin/piper"),
+            piper,
             "-m", MODEL,
-            "-f", raw_file,
-            "--",
-            text
+            "-f", output_wav
         ],
+        input=text + "\n",
+        text=True,
         check=True
     )
 
-    print("🔊 WAV oluşturuluyor...")
+    if not os.path.isfile(output_wav) or os.path.getsize(output_wav) == 0:
+        raise RuntimeError("Piper WAV dosyası oluşturamadı.")
+
+    print("🔊 WAV kontrolü...")
 
     subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-f", "f32le",
-            "-ar", "22050",
-            "-ac", "1",
-            "-i", raw_file,
-            "-c:a", "pcm_s16le",
-            output_wav
-        ],
+        ["ffprobe", "-v", "error", output_wav],
         check=True
     )
-
-    os.remove(raw_file)
 
     print(f"✅ Ses hazır: {output_wav}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Kullanım:")
-        print("python voiceover.py senaryo.txt ses.wav")
+        print("Kullanım: python voiceover.py senaryo.txt ses.wav")
         sys.exit(1)
 
     create_voice(sys.argv[1], sys.argv[2])
+PY
+
+git add voiceover.py
+git commit -m "Fix Piper voiceover WAV generation"
+git push
+    
