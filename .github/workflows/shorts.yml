@@ -1,0 +1,106 @@
+name: YouTube Otomatik Shorts
+
+on:
+  schedule:
+    - cron: '30 */4 * * *'
+  workflow_dispatch:
+
+jobs:
+  shorts-yukle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      TZ: Europe/Istanbul
+
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sistem paketlerini kur
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1
+
+          echo "=== Piper kuruluyor ==="
+
+          rm -rf "$RUNNER_TEMP/piper"
+          mkdir -p "$RUNNER_TEMP/piper"
+
+          wget -q --show-progress \
+            https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
+            -O "$RUNNER_TEMP/piper.tar.gz"
+
+          tar -xzf "$RUNNER_TEMP/piper.tar.gz" -C "$RUNNER_TEMP/piper"
+
+          PIPER_EXE="$(find "$RUNNER_TEMP/piper" -type f -name piper -print -quit)"
+
+          if [ -z "$PIPER_EXE" ]; then
+            echo "Piper binary bulunamadi!"
+            exit 1
+          fi
+
+          sudo mkdir -p /opt/piper
+          sudo cp -a "$(dirname "$PIPER_EXE")"/. /opt/piper/
+
+          sudo chmod +x /opt/piper/piper
+
+          sudo find /opt/piper -type f \
+            \( -name "*.so" -o -name "*.so.*" \) \
+            -exec sh -c 'echo "$(dirname "$1")"' _ {} \; \
+            | sort -u \
+            | sudo tee /etc/ld.so.conf.d/piper.conf
+
+          echo "/opt/piper" | sudo tee -a /etc/ld.so.conf.d/piper.conf
+
+          sudo ldconfig
+
+          echo "=== MODEL DOSYASI ARANIYOR ==="
+          MODEL_FILE=""
+          for f in "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" "$GITHUB_WORKSPACE/tr_TR-dfki-medium.onnx" "$GITHUB_WORKSPACE/models/"*.onnx; do
+            if [ -f "$f" ]; then
+              MODEL_FILE="$f"
+              break
+            fi
+          done
+
+          if [ -z "$MODEL_FILE" ]; then
+            echo "❌ Piper modeli bulunamadı!"
+            exit 1
+          fi
+
+          echo "✅ Model bulundu: $MODEL_FILE"
+
+          echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
+
+      - name: Python paketlerini kur
+        run: |
+          pip install requests google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+
+      - name: YouTube token oluştur
+        env:
+          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
+        run: |
+          printf '%s' "$TOKEN_JSON" > token.json
+
+      - name: Config oluştur
+        env:
+          CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
+        run: |
+          printf '%s' "$CONFIG_JSON" > config.json
+
+      - name: Shorts oluştur ve yükle
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python auto_shorts.py
