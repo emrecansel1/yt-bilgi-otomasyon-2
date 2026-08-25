@@ -33,11 +33,22 @@ def run(cmd, name):
     print(name)
     print("=" * 40)
 
-    result = subprocess.run(cmd)
+    result = subprocess.run(
+        cmd,
+        text=True,
+        capture_output=True
+    )
+
+    if result.stdout:
+        print(result.stdout)
+
+    if result.stderr:
+        print(result.stderr)
 
     if result.returncode != 0:
-        raise SystemExit(f"❌ HATA: {name}")
-
+        raise SystemExit(
+            f"❌ HATA: {name} (exit code {result.returncode})"
+        )
 
 def main():
 
