@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -10,6 +11,8 @@ OUT = os.path.join(BASE, "output")
 TOKEN = "token.json"
 VIDEO = os.path.join(OUT, "current_final.mp4")
 CONFIG = "config.json"
+CONTENT = os.path.join(OUT, "current_content.txt")
+
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 
@@ -22,6 +25,59 @@ def load_config():
             return json.load(f)
     except Exception:
         return {}
+
+
+def parse_metadata_from_content():
+    """current_content.txt içindeki METADATA bölümünden
+    BAŞLIK, AÇIKLAMA, ETİKETLER bilgilerini çıkarır."""
+
+    if not os.path.exists(CONTENT):
+        return None, None, None
+
+    try:
+        with open(CONTENT, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return None, None, None
+
+    title = None
+    description = None
+    tags = None
+
+    title_match = re.search(
+        r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nAÇIKLAMA:)",
+        text,
+        re.DOTALL
+    )
+    if title_match:
+        title = title_match.group(1).strip()
+
+    desc_match = re.search(
+        r"AÇIKLAMA:\s*\n?(.+?)(?:\n\s*\n|\nETİKETLER:)",
+        text,
+        re.DOTALL
+    )
+    if desc_match:
+        description = desc_match.group(1).strip()
+
+    tags_match = re.search(
+        r"ETİKETLER:\s*\n?(.+?)$",
+        text,
+        re.DOTALL
+    )
+    if tags_match:
+        raw_tags = tags_match.group(1).strip()
+        tags = [
+            t.strip()
+            for t in raw_tags.split(",")
+            if t.strip()
+        ]
+
+    print("[DEBUG] Başlık bulundu mu:", title is not None)
+    print("[DEBUG] Açıklama bulundu mu:", description is not None)
+    print("[DEBUG] Etiket bulundu mu:", tags is not None)
+
+    return title, description, tags
 
 
 def upload():
@@ -57,20 +113,23 @@ def upload():
     )
 
     config = load_config()
-
     youtube_config = config.get("youtube", {})
 
-    title = config.get(
+    parsed_title, parsed_description, parsed_tags = (
+        parse_metadata_from_content()
+    )
+
+    title = parsed_title or config.get(
         "youtube_title",
         "İlginç Bilgiler | Bilim ve Tarih"
     )
 
-    description = config.get(
+    description = parsed_description or config.get(
         "youtube_description",
         "Bilim, tarih ve dünyadan ilginç bilgiler."
     )
 
-    tags = config.get(
+    tags = parsed_tags or config.get(
         "youtube_tags",
         ["bilgi", "bilim", "tarih", "ilginç bilgiler"]
     )
@@ -80,8 +139,6 @@ def upload():
         "public"
     )
 
-    # NORMAL UZUN YOUTUBE VİDEOSU
-    # Shorts'a özel hiçbir metadata kullanılmıyor.
     body = {
         "snippet": {
             "title": title[:100],
@@ -110,7 +167,6 @@ def upload():
     print("📁 Video:", VIDEO)
     print("📺 Format: 1920x1080")
     print("⏱️ Uzun video modu")
-    print("🔞 Shorts metadata: YOK")
     print()
 
     request = youtube.videos().insert(
