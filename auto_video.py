@@ -204,6 +204,14 @@ def main():
     if not os.path.exists(FINAL):
         raise SystemExit("❌ Final video oluşmadı.")
 
+    print()
+    print("================================")
+    print("✅ FINAL VIDEO HAZIR")
+    print("================================")
+    print("📁", FINAL)
+    print("📦 Boyut:", round(os.path.getsize(FINAL) / 1024 / 1024, 2), "MB")
+    print("================================")
+
     # --------------------------------------------------
     # THUMBNAIL
     # --------------------------------------------------
