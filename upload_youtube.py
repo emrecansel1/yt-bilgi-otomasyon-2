@@ -1,15 +1,18 @@
 import os
 import json
 import re
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 
 TOKEN = "token.json"
 VIDEO = os.path.join(OUT, "current_final.mp4")
+THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 CONFIG = "config.json"
 CONTENT = os.path.join(OUT, "current_content.txt")
 
@@ -49,6 +52,7 @@ def parse_metadata_from_content():
         text,
         re.DOTALL
     )
+
     if title_match:
         title = title_match.group(1).strip()
 
@@ -57,6 +61,7 @@ def parse_metadata_from_content():
         text,
         re.DOTALL
     )
+
     if desc_match:
         description = desc_match.group(1).strip()
 
@@ -65,8 +70,10 @@ def parse_metadata_from_content():
         text,
         re.DOTALL
     )
+
     if tags_match:
         raw_tags = tags_match.group(1).strip()
+
         tags = [
             t.strip()
             for t in raw_tags.split(",")
@@ -80,6 +87,41 @@ def parse_metadata_from_content():
     return title, description, tags
 
 
+def upload_thumbnail(youtube, video_id):
+    """Oluşturulan thumbnail'i YouTube videosuna kapak olarak atar."""
+
+    if not os.path.exists(THUMBNAIL):
+        print("⚠️ Thumbnail bulunamadı:")
+        print(THUMBNAIL)
+        print("⚠️ Video thumbnail olmadan yüklendi.")
+        return False
+
+    print()
+    print("🖼️ YouTube thumbnail yükleniyor...")
+    print("📁 Thumbnail:", THUMBNAIL)
+
+    try:
+        thumbnail_media = MediaFileUpload(
+            THUMBNAIL,
+            mimetype="image/jpeg",
+            resumable=False
+        )
+
+        youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=thumbnail_media
+        ).execute()
+
+        print("✅ Thumbnail YouTube'a başarıyla yüklendi.")
+        return True
+
+    except Exception as e:
+        print("⚠️ Thumbnail yüklenemedi:")
+        print(str(e))
+        print("⚠️ Video yine de YouTube'a yüklenmiş durumda.")
+        return False
+
+
 def upload():
     print("=" * 40)
     print("📺 NORMAL YOUTUBE VİDEO YÜKLEYİCİ")
@@ -89,7 +131,9 @@ def upload():
         raise SystemExit("❌ token.json bulunamadı.")
 
     if not os.path.exists(VIDEO):
-        raise SystemExit(f"❌ Video bulunamadı: {VIDEO}")
+        raise SystemExit(
+            f"❌ Video bulunamadı: {VIDEO}"
+        )
 
     with open(TOKEN, encoding="utf-8") as f:
         token_data = json.load(f)
@@ -100,11 +144,15 @@ def upload():
     )
 
     if not creds.valid:
+
         if creds.expired and creds.refresh_token:
             from google.auth.transport.requests import Request
             creds.refresh(Request())
+
         else:
-            raise SystemExit("❌ YouTube token geçersiz veya yenilenemiyor.")
+            raise SystemExit(
+                "❌ YouTube token geçersiz veya yenilenemiyor."
+            )
 
     youtube = build(
         "youtube",
@@ -131,7 +179,12 @@ def upload():
 
     tags = parsed_tags or config.get(
         "youtube_tags",
-        ["bilgi", "bilim", "tarih", "ilginç bilgiler"]
+        [
+            "bilgi",
+            "bilim",
+            "tarih",
+            "ilginç bilgiler"
+        ]
     )
 
     privacy = youtube_config.get(
@@ -145,7 +198,10 @@ def upload():
             "description": description,
             "tags": tags,
             "categoryId": str(
-                youtube_config.get("category_id", "27")
+                youtube_config.get(
+                    "category_id",
+                    "27"
+                )
             ),
             "defaultLanguage": "tr",
             "defaultAudioLanguage": "tr"
@@ -178,6 +234,7 @@ def upload():
     response = None
 
     while response is None:
+
         status, response = request.next_chunk()
 
         if status:
@@ -198,10 +255,26 @@ def upload():
     print("✅ NORMAL YOUTUBE VİDEOSU YÜKLENDİ")
     print("=" * 40)
     print("🆔 Video ID:", video_id)
+
     print(
         "🔗 https://www.youtube.com/watch?v="
         + video_id
     )
+
+    print("=" * 40)
+
+    # --------------------------------------------------
+    # THUMBNAIL
+    # --------------------------------------------------
+
+    upload_thumbnail(
+        youtube,
+        video_id
+    )
+
+    print()
+    print("=" * 40)
+    print("🎉 VİDEO + THUMBNAIL TAMAMLANDI")
     print("=" * 40)
 
     return video_id
