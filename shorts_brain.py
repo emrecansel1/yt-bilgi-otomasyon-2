@@ -446,6 +446,12 @@ def main():
 
     history = history_keys()
 
+    def is_in_history(topic):
+        for old_topic in history:
+            if similar(topic, old_topic):
+                return True
+        return False
+
     fresh = []
     backup_candidates = []
 
@@ -455,85 +461,10 @@ def main():
         if not topic:
             continue
 
-        if topic in history:
+        if is_in_history(topic):
             continue
 
         if item["score"] >= 70:
             fresh.append(item)
         elif item["score"] >= 45:
-            backup_candidates.append(item)
-
-    if len(fresh) < 5:
-        backup_candidates.sort(
-            key=lambda x: x.get("score", 0),
-            reverse=True
-        )
-
-        for item in backup_candidates:
-            if item not in fresh:
-                fresh.append(item)
-
-    fresh.sort(
-        key=lambda x: x.get("score", 0),
-        reverse=True
-    )
-
-    selected = []
-
-    for candidate in fresh:
-
-        if any(
-            similar(candidate["topic"], old["topic"])
-            for old in selected
-        ):
-            continue
-
-        selected.append(candidate)
-
-        if len(selected) == 1:
-            break
-
-    if len(selected) < 5:
-        print()
-        print("[UYARI] 5 farklı kaliteli konu bulunamadı.")
-        print("Bulunan konu sayısı:", len(selected))
-
-    result = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "count": len(selected),
-        "topics": selected
-    }
-
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-        json.dump(
-            result,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
-
-    save_history(selected)
-
-    print()
-    print("=" * 55)
-    print("             SECILEN SHORTS KONULARI")
-    print("=" * 55)
-
-    for i, item in enumerate(selected, 1):
-        print()
-        print(f"{i}. {item['topic']}")
-        print("   Tür   :", item["type"])
-        print("   Puan  :", item["score"])
-        print("   Kaynak:", item["source"])
-
-    print()
-    print("Kaydedildi:", OUTPUT_FILE)
-    print("Geçmiş:", HISTORY_FILE)
-
-
-if __name__ == "__main__":
-    main()
+            backup_
