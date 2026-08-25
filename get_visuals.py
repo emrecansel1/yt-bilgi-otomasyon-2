@@ -47,6 +47,16 @@ def get_topic():
     with open(CONTENT, "r", encoding="utf-8") as f:
         text = f.read()
 
+    # METADATA bölümünü görsel sahnelerinden çıkar.
+    # Sadece gerçek seslendirme metni görsel aramasına gitsin.
+    if "=== SESLENDİRME METNİ ===" in text:
+        text = text.split("=== SESLENDİRME METNİ ===", 1)[1]
+
+    if "=== METADATA ===" in text:
+        text = text.split("=== METADATA ===", 1)[0]
+
+    text = text.strip()
+
     lines = [
         clean_text(x)
         for x in text.splitlines()
