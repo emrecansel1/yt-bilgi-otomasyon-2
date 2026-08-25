@@ -42,7 +42,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🔎 1/8 TREND TARANIYOR...")
+    print("🔎 1/9 TREND TARANIYOR...")
 
     run(
         [
@@ -57,7 +57,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("📰 2/8 HABERLER TARANIYOR...")
+    print("📰 2/9 HABERLER TARANIYOR...")
 
     run(
         [
@@ -72,7 +72,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🧠 3/8 SHORTS KONUSU SEÇİLİYOR...")
+    print("🧠 3/9 SHORTS KONUSU SEÇİLİYOR...")
 
     run(
         [
@@ -87,7 +87,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🔬 4/8 KONU ARAŞTIRILIYOR...")
+    print("🔬 4/9 KONU ARAŞTIRILIYOR...")
 
     run(
         [
@@ -102,7 +102,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("✍️ 5/8 SHORTS METNİ YAZILIYOR...")
+    print("✍️ 5/9 SHORTS METNİ YAZILIYOR...")
 
     run(
         [
@@ -154,7 +154,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🎙️ 6/8 SES OLUŞTURULUYOR...")
+    print("🎙️ 6/9 SES OLUŞTURULUYOR...")
 
     run(
         [
@@ -174,7 +174,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🖼️ 7/8 GÖRSELLER BULUNUYOR VE VİDEO OLUŞTURULUYOR...")
+    print("🖼️ 7/9 GÖRSELLER BULUNUYOR VE VİDEO OLUŞTURULUYOR...")
 
     run(
         [
@@ -200,7 +200,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🔊 8/8 SES VİDEOYA EKLENİYOR...")
+    print("🔊 8/9 SES VİDEOYA EKLENİYOR...")
 
     run(
         [
@@ -222,6 +222,21 @@ def main():
 
     if not os.path.exists(FINAL):
         raise SystemExit("❌ shorts_final.mp4 oluşmadı.")
+
+    # --------------------------------------------------
+    # 9. YOUTUBE'A YÜKLE
+    # --------------------------------------------------
+
+    print()
+    print("📤 9/9 YOUTUBE SHORTS'A YÜKLENİYOR...")
+
+    run(
+        [
+            sys.executable,
+            os.path.join(REPO_BASE, "upload_youtube_shorts.py")
+        ],
+        "YOUTUBE SHORTS YÜKLEYİCİ"
+    )
 
     if os.path.exists(VIDEO_NO_AUDIO):
         os.remove(VIDEO_NO_AUDIO)
