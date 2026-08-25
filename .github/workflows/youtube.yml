@@ -1,140 +1,143 @@
 name: YouTube Otomatik Video
 
 on:
-schedule:
-- cron: '0 */3 * * *'
-workflow_dispatch:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
 
 jobs:
-video-yukle:
-runs-on: ubuntu-latest
-timeout-minutes: 30
+  video-yukle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-env:  
-  TZ: Europe/Istanbul  
+    env:
+      TZ: Europe/Istanbul
 
-steps:  
-  - name: Kodu indir  
-    uses: actions/checkout@v4  
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
 
-  - name: Python kur  
-    uses: actions/setup-python@v5  
-    with:  
-      python-version: '3.11'  
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-  - name: Sistem paketlerini kur  
-    shell: bash  
-    run: |  
-      set -euxo pipefail  
+      - name: Sistem paketlerini kur
+        shell: bash
+        run: |
+          set -euxo pipefail
 
-      sudo apt-get update  
-      sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1  
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1
 
-      echo "=== Piper kuruluyor ==="  
+          echo "=== Piper kuruluyor ==="
 
-      rm -rf "$RUNNER_TEMP/piper"  
-      mkdir -p "$RUNNER_TEMP/piper"  
+          rm -rf "$RUNNER_TEMP/piper"
+          mkdir -p "$RUNNER_TEMP/piper"
 
-      wget -q --show-progress \  
-        https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \  
-        -O "$RUNNER_TEMP/piper.tar.gz"  
+          wget -q --show-progress \
+            https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
+            -O "$RUNNER_TEMP/piper.tar.gz"
 
-      tar -xzf "$RUNNER_TEMP/piper.tar.gz" -C "$RUNNER_TEMP/piper"  
+          tar -xzf "$RUNNER_TEMP/piper.tar.gz" -C "$RUNNER_TEMP/piper"
 
-      echo "=== Piper araniyor ==="  
-      find "$RUNNER_TEMP/piper" -maxdepth 3 -type f -print  
+          echo "=== Piper araniyor ==="
+          find "$RUNNER_TEMP/piper" -maxdepth 3 -type f -print
 
-      PIPER_EXE="$(find "$RUNNER_TEMP/piper" -type f -name piper -print -quit)"  
+          PIPER_EXE="$(find "$RUNNER_TEMP/piper" -type f -name piper -print -quit)"
 
-      if [ -z "$PIPER_EXE" ]; then  
-        echo "Piper binary bulunamadi!"  
-        exit 1  
-      fi  
+          if [ -z "$PIPER_EXE" ]; then
+            echo "Piper binary bulunamadi!"
+            exit 1
+          fi
 
-      echo "Piper binary: $PIPER_EXE"  
+          echo "Piper binary: $PIPER_EXE"
 
-      sudo mkdir -p /opt/piper  
-      sudo cp -a "$(dirname "$PIPER_EXE")"/. /opt/piper/  
+          sudo mkdir -p /opt/piper
+          sudo cp -a "$(dirname "$PIPER_EXE")"/. /opt/piper/
 
-      sudo chmod +x /opt/piper/piper  
+          sudo chmod +x /opt/piper/piper
 
-      # Piper'ın kendi shared library klasörlerini bul  
-      sudo find /opt/piper -type f \  
-        -name "*.so" -o -name "*.so.*" \  
-        -exec sh -c 'echo "$(dirname "$1")"' _ {} \; \  
-        | sort -u \  
-        | sudo tee /etc/ld.so.conf.d/piper.conf  
+          sudo find /opt/piper -type f \
+            \( -name "*.so" -o -name "*.so.*" \) \
+            -exec sh -c 'echo "$(dirname "$1")"' _ {} \; \
+            | sort -u \
+            | sudo tee /etc/ld.so.conf.d/piper.conf
 
-      echo "/opt/piper" | sudo tee -a /etc/ld.so.conf.d/piper.conf  
+          echo "/opt/piper" | sudo tee -a /etc/ld.so.conf.d/piper.conf
 
-      sudo ldconfig  
+          sudo ldconfig
 
-      echo "=== Piper binary ==="  
-      /opt/piper/piper --help || true  
+          echo "=== Piper binary ==="
+          /opt/piper/piper --help || true
 
-      echo "=== Piper kutuphaneleri ==="  
-      ldd /opt/piper/piper  
+          echo "=== Piper kutuphaneleri ==="
+          ldd /opt/piper/piper
 
-      echo "=== MODEL DOSYASI ARANIYOR ==="  
-      MODEL_FILE=""  
-      for f in "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx"                    "$GITHUB_WORKSPACE/tr_TR-dfki-medium.onnx"                    "$GITHUB_WORKSPACE/models/"*.onnx; do  
-        if [ -f "$f" ]; then  
-          MODEL_FILE="$f"  
-          break  
-        fi  
-      done  
+          echo "=== MODEL DOSYASI ARANIYOR ==="
+          MODEL_FILE=""
 
-      if [ -z "$MODEL_FILE" ]; then  
-        echo "❌ Piper modeli bulunamadı!"  
-        echo "=== WORKSPACE MODELLER ==="  
-        find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name "*.onnx" -o -name "*.onnx.json" -print  
-        exit 1  
-      fi  
+          for f in \
+            "$GITHUB_WORKSPACE/models/tr_TR-dfki-medium.onnx" \
+            "$GITHUB_WORKSPACE/tr_TR-dfki-medium.onnx" \
+            "$GITHUB_WORKSPACE/models/"*.onnx
+          do
+            if [ -f "$f" ]; then
+              MODEL_FILE="$f"
+              break
+            fi
+          done
 
-      echo "✅ Model bulundu: $MODEL_FILE"  
-      ls -lh "$MODEL_FILE"  
+          if [ -z "$MODEL_FILE" ]; then
+            echo "❌ Piper modeli bulunamadı!"
+            echo "=== WORKSPACE MODELLER ==="
+            find "$GITHUB_WORKSPACE" -maxdepth 4 -type f \
+              \( -name "*.onnx" -o -name "*.onnx.json" \) -print
+            exit 1
+          fi
 
-      echo "=== Piper test ==="  
-      printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \  
-        -m "$MODEL_FILE" \  
-        -f "$RUNNER_TEMP/test.wav"  
+          echo "✅ Model bulundu: $MODEL_FILE"
+          ls -lh "$MODEL_FILE"
 
-      if [ ! -s "$RUNNER_TEMP/test.wav" ]; then  
-        echo "❌ Piper WAV dosyası oluşturulamadı!"  
-        exit 1  
-      fi  
+          echo "=== Piper test ==="
+          printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
+            -m "$MODEL_FILE" \
+            -f "$RUNNER_TEMP/test.wav"
 
-      echo "=== Piper WAV kontrol ==="  
-      file "$RUNNER_TEMP/test.wav"  
-      ls -lh "$RUNNER_TEMP/test.wav"  
+          if [ ! -s "$RUNNER_TEMP/test.wav" ]; then
+            echo "❌ Piper WAV dosyası oluşturulamadı!"
+            exit 1
+          fi
 
-      echo "Piper test BASARILI."  
+          echo "=== Piper WAV kontrol ==="
+          file "$RUNNER_TEMP/test.wav"
+          ls -lh "$RUNNER_TEMP/test.wav"
 
+          echo "Piper test BASARILI."
 
-      echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"  
-      echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"  
+          echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
 
-  - name: Python paketlerini kur  
-    run: |  
-      pip install requests google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2  
+      - name: Python paketlerini kur
+        run: |
+          python -m pip install --upgrade pip
+          pip install Pillow requests google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
 
-  - name: YouTube token oluştur  
-    env:  
-      TOKEN_JSON: ${{ secrets.TOKEN_JSON }}  
-    run: |  
-      printf '%s' "$TOKEN_JSON" > token.json  
+      - name: YouTube token oluştur
+        env:
+          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
+        run: |
+          printf '%s' "$TOKEN_JSON" > token.json
 
-  - name: Config oluştur  
-    env:  
-      CONFIG_JSON: ${{ secrets.CONFIG_JSON }}  
-    run: |  
-      printf '%s' "$CONFIG_JSON" > config.json  
+      - name: Config oluştur
+        env:
+          CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
+        run: |
+          printf '%s' "$CONFIG_JSON" > config.json
 
-  - name: Video oluştur ve yükle  
-    env:  
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  
-      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}  
-    run: |  
-      python auto_video.py
-
-Tek satırda syle
+      - name: Video oluştur ve yükle
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python auto_video.py
