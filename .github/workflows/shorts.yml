@@ -2,7 +2,7 @@ name: YouTube Otomatik Shorts
 
 on:
   schedule:
-    - cron: '30 */4 * * *'
+   - cron: '15 0,2,5,7,10,12,14,17,19,21 * * *' 
   workflow_dispatch:
 
 jobs:
