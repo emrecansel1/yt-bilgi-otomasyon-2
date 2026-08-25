@@ -11,6 +11,7 @@ CONTENT = os.path.join(OUT, "current_content.txt")
 VOICE = os.path.join(OUT, "current_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "current_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "current_final.mp4")
+THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 
 TOPICS = [
     "Nikola Tesla'nın en şaşırtıcı icatları ve hayatındaki bilinmeyen olaylar",
@@ -25,6 +26,7 @@ TOPICS = [
     "Tarihte yaşanmış en şaşırtıcı bilimsel deneyler"
 ]
 
+
 def run(cmd, name):
     print()
     print("=" * 40)
@@ -35,6 +37,7 @@ def run(cmd, name):
 
     if result.returncode != 0:
         raise SystemExit(f"❌ HATA: {name}")
+
 
 def main():
 
@@ -50,7 +53,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🧠 1/5 İÇERİK OLUŞTURULUYOR...")
+    print("🧠 1/6 İÇERİK OLUŞTURULUYOR...")
 
     run(
         [
@@ -69,7 +72,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🎙️ 2/5 SES OLUŞTURULUYOR...")
+    print("🎙️ 2/6 SES OLUŞTURULUYOR...")
 
     run(
         [
@@ -89,7 +92,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🖼️ 3/5 GÖRSELLER BULUNUYOR...")
+    print("🖼️ 3/6 GÖRSELLER BULUNUYOR...")
 
     run(
         [
@@ -123,7 +126,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🎬 4/5 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
+    print("🎬 4/6 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
 
     temp_script = os.path.join(BASE, "_auto_visual.py")
 
@@ -166,7 +169,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🔊 5/5 SES VİDEOYA EKLENİYOR...")
+    print("🔊 5/6 SES VİDEOYA EKLENİYOR...")
 
     run(
         [
@@ -177,7 +180,8 @@ def main():
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "copy",
-            "-c:a", "aac", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
+            "-c:a", "aac",
+            "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-b:a", "128k",
             "-shortest",
             "-movflags", "+faststart",
@@ -188,6 +192,26 @@ def main():
 
     if not os.path.exists(FINAL):
         raise SystemExit("❌ Final video oluşmadı.")
+
+    # --------------------------------------------------
+    # THUMBNAIL
+    # --------------------------------------------------
+
+    print()
+    print("🖼️ THUMBNAIL OLUŞTURULUYOR...")
+
+    run(
+        [
+            sys.executable,
+            "thumbnail_generator.py"
+        ],
+        "THUMBNAIL MOTORU"
+    )
+
+    if not os.path.exists(THUMBNAIL):
+        raise SystemExit("❌ Thumbnail oluşturulamadı.")
+
+    print("✅ Thumbnail hazır:", THUMBNAIL)
 
     # --------------------------------------------------
     # 6. YOUTUBE'A YÜKLE
@@ -203,6 +227,7 @@ def main():
         ],
         "YOUTUBE YÜKLEYİCİ"
     )
+
     # --------------------------------------------------
     # TEMİZLİK
     # --------------------------------------------------
@@ -215,7 +240,8 @@ def main():
     print("🎉 OTOMATİK VİDEO HAZIR")
     print("================================")
     print("🎯 Konu:", topic)
-    print("📁 Dosya:", FINAL)
+    print("📁 Video:", FINAL)
+    print("🖼️ Thumbnail:", THUMBNAIL)
     print(
         "💾 Boyut:",
         round(os.path.getsize(FINAL) / 1024 / 1024, 2),
