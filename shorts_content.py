@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import requests
 import re
@@ -6,11 +7,19 @@ from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
-TOPICS_FILE = os.path.join(BASE, "shorts_topics.json")
-RESEARCH_FILE = os.path.join(BASE, "arastirma.json")
 OUTPUT_FILE = os.path.join(BASE, "shorts_content.json")
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
+
+if not API_KEY:
+    raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+
+if len(sys.argv) < 2:
+    raise RuntimeError(
+        'Kullanım: python shorts_content.py "KONU"'
+    )
+
+TOPIC = " ".join(sys.argv[1:]).strip()
 
 
 def clean_text(text):
@@ -20,217 +29,76 @@ def clean_text(text):
     return text.strip()
 
 
-def load_research(topic):
-    if not os.path.exists(RESEARCH_FILE):
-        return None
-
-    try:
-        with open(
-            RESEARCH_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-            research = json.load(f)
-
-    except Exception as e:
-        print("[UYARI] Araştırma okunamadı:", e)
-        return None
-
-    research_topic = research.get(
-        "topic",
-        ""
-    )
-
-    topic_words = set(
-        x.lower()
-        for x in re.findall(
-            r"[A-Za-zÇĞİÖŞÜçğıöşü0-9]+",
-            topic
-        )
-        if len(x) >= 4
-    )
-
-    research_words = set(
-        x.lower()
-        for x in re.findall(
-            r"[A-Za-zÇĞİÖŞÜçğıöşü0-9]+",
-            research_topic
-        )
-        if len(x) >= 4
-    )
-
-    if topic_words and research_words:
-        common = topic_words & research_words
-
-        if len(common) == 0:
-            print(
-                "[UYARI] Araştırma mevcut konu ile uyuşmuyor."
-            )
-            return None
-
-    return research
-
-
-def research_context(research):
-    if not research:
-        return "Araştırma verisi bulunamadı."
-
-    status = research.get(
-        "verification",
-        {}
-    ).get(
-        "status",
-        "unknown"
-    )
-
-    source_count = research.get(
-        "source_count",
-        0
-    )
-
-    facts = research.get(
-        "facts",
-        []
-    )
-
-    lines = []
-
-    lines.append(
-        f"DOĞRULAMA DURUMU: {status}"
-    )
-
-    lines.append(
-        f"İLGİLİ KAYNAK SAYISI: {source_count}"
-    )
-
-    lines.append("")
-    lines.append("KAYNAKLAR:")
-
-    for i, fact in enumerate(
-        facts,
-        1
-    ):
-        source = fact.get(
-            "source",
-            ""
-        )
-
-        title = fact.get(
-            "title",
-            ""
-        )
-
-        published = fact.get(
-            "published",
-            ""
-        )
-
-        lines.append(
-            f"{i}. {source} | {title}"
-        )
-
-        if published:
-            lines.append(
-                f"   Tarih: {published}"
-            )
-
-    return "\n".join(lines)
-
-
-def generate(topic, research):
-
-    context = research_context(
-        research
-    )
+def generate(topic):
 
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı Türkçe
 bilgi YouTube kanalının Shorts içerik yazarısın.
 
-ANA KONU:
+KONU:
 {topic}
-
-AŞAĞIDAKİ ARAŞTIRMA VERİLERİNİ KULLAN:
-
-{context}
 
 GÖREV:
 
-Bu konu hakkında yaklaşık
-40-55 saniyelik özgün bir YouTube Shorts
+Bu konu hakkında 15-30 saniyede seslendirilebilecek,
+kısa ve son derece çarpıcı bir YouTube Shorts
 anlatım metni oluştur.
+
+AMAÇ:
+
+İzleyicinin daha ilk cümlede durup videoyu izlemeye
+devam etmesini sağlamak. İzleyici hiçbir anda sıkılıp
+kaydırmamalı.
 
 ÇOK ÖNEMLİ:
 
-- Kaynak başlıklarını kopyalama.
-- Haber metnini kopyalama.
-- Gazete dilini taklit etme.
-- Kaynaklarda olmayan bilgi uydurma.
-- Bir bilgi yalnızca tek kaynakta varsa
-  bunu kesin gerçek gibi sunma.
-- Kaynaklar arasında çelişki varsa
-  çelişkiyi gizleme.
-- Araştırma verisinden çıkarılamayan
-  ayrıntıları ekleme.
-- Haberin kendisini değil,
-  izleyicinin anlayacağı bilgi hikâyesini anlat.
-- Güncel olaylarda taraf tutma.
-- Siyasi propaganda yapma.
-- Hakaret veya kışkırtıcı dil kullanma.
+- Bilgi uydurma, tarihi ve bilimsel gerçeklere sadık kal.
+- Doğrulanamayan bilgiyi kesin gerçek gibi sunma.
+- Gazete/haber dili kullanma, sıcak bir anlatıcı gibi konuş.
+- Gereksiz detaya girme, sadece en çarpıcı 1-2 bilgiye odaklan.
+- Konuyla alakasız hiçbir şey ekleme.
+- Siyasi propaganda, hakaret veya kışkırtıcı dil kullanma.
 
 KANAL TARZI:
 
 - Türkçe.
-- Belgesel anlatımı.
-- Doğal ve akıcı.
-- Kısa cümleler.
-- İlk cümle güçlü merak uyandırsın.
-- Gereksiz giriş yapma.
-- "Merhaba arkadaşlar" kullanma.
+- Doğal, akıcı, sıcak anlatıcı sesi.
+- Kısa ve vurucu cümleler.
+- İLK CÜMLE bir soru, şaşırtıcı bir gerçek veya çarpıcı bir
+  iddia ile başlamalı ve izleyiciyi anında yakalamalı.
+- "Merhaba arkadaşlar" gibi giriş yapma.
+- Video ortasında hiç durgunluk olmasın, her cümle bir
+  öncekinden daha meraklandırıcı olsun.
+- SON CÜMLE izleyicide "bir daha izlemek" veya "bunu
+  bilmiyordum, başkasına anlatmalıyım" hissi uyandırmalı;
+  mümkünse videoyu tekrar baştan izlemek isteyecek şekilde
+  ("loop-friendly") bir çarpıcı kapanışla bitsin.
 - Kamera veya sahne açıklaması yazma.
 - Müzik veya efekt yazma.
 - Parantez içi açıklama yazma.
 
 BAŞLIK:
 
-- Özgün olmalı.
-- Haber başlığını aynen kullanma.
-- Konuyla doğrudan alakalı olmalı.
-- Merak uyandırmalı.
-- Yanıltıcı clickbait olmamalı.
+- Özgün, merak uyandıran, ama yanıltıcı clickbait olmayan.
 - Videoda anlatılmayan şeyi vaat etmemeli.
-- Mümkünse önemli kişi, olay,
-  sayı veya sonucu kullanmalı.
-
-ÖRNEK:
-
-Kötü:
-"Trump'tan tarihi adım"
-
-İyi:
-"Suriye 47 Yıl Sonra Neden Listeden Çıkarıldı?"
-
-Ancak örneği aynen kullanma.
-Gerçek araştırma verisine göre kendi başlığını üret.
+- Mümkünse önemli kişi, sayı veya sonucu içermeli.
 
 METİN:
 
-Yaklaşık 90-130 kelime yaz.
+Yaklaşık 40-75 kelime yaz (15-30 saniyelik seslendirmeye
+uygun uzunlukta). Bu bir üst sınır değil, hedef uzunluktur;
+metni bu aralıkta tutmaya özen göster.
 
-Metin sadece anlatıcının okuyacağı
-cümlelerden oluşsun.
+Metin sadece anlatıcının okuyacağı cümlelerden oluşsun.
 
 AÇIKLAMA:
 
-Videonun ne anlattığını 1-2 kısa
-cümleyle açıkla.
+Videonun ne anlattığını 1-2 kısa cümleyle açıkla.
 
 ETİKETLER:
 
 8-12 adet alakalı Türkçe etiket yaz.
-Virgülle ayır.
-
-Hashtag (#) kullanma.
+Virgülle ayır. Hashtag (#) kullanma.
 
 ÇIKTIYI TAM OLARAK ŞU FORMATTA VER:
 
@@ -254,16 +122,12 @@ ETİKETLER:
 
     response = requests.post(
         url,
-        params={
-            "key": API_KEY
-        },
+        params={"key": API_KEY},
         json={
             "contents": [
                 {
                     "parts": [
-                        {
-                            "text": prompt
-                        }
+                        {"text": prompt}
                     ]
                 }
             ]
@@ -276,23 +140,14 @@ ETİKETLER:
     data = response.json()
 
     return (
-        data[
-            "candidates"
-        ][0][
-            "content"
-        ][
-            "parts"
-        ][0][
-            "text"
-        ]
+        data["candidates"][0]
+        ["content"]["parts"][0]["text"]
     )
 
 
 def parse(text, topic):
 
-    text = clean_text(
-        text
-    )
+    text = clean_text(text)
 
     title = ""
     script = ""
@@ -306,9 +161,7 @@ def parse(text, topic):
     )
 
     if match:
-        title = match.group(
-            1
-        ).strip()
+        title = match.group(1).strip()
 
     match = re.search(
         r"METİN:\s*(.*?)(?=\s*AÇIKLAMA:)",
@@ -317,9 +170,7 @@ def parse(text, topic):
     )
 
     if match:
-        script = match.group(
-            1
-        ).strip()
+        script = match.group(1).strip()
 
     match = re.search(
         r"AÇIKLAMA:\s*(.*?)(?=\s*ETİKETLER:)",
@@ -328,9 +179,7 @@ def parse(text, topic):
     )
 
     if match:
-        description = match.group(
-            1
-        ).strip()
+        description = match.group(1).strip()
 
     match = re.search(
         r"ETİKETLER:\s*(.*)",
@@ -339,23 +188,18 @@ def parse(text, topic):
     )
 
     if match:
-        tags = match.group(
-            1
-        ).strip()
+        tags = match.group(1).strip()
 
     if not script:
         script = text
 
-    words = len(
-        script.split()
-    )
+    words = len(script.split())
 
-    if words < 70:
-        print(
-            "[UYARI] Metin kısa:",
-            words,
-            "kelime"
-        )
+    if words < 30:
+        print("[UYARI] Metin çok kısa:", words, "kelime")
+
+    if words > 100:
+        print("[UYARI] Metin çok uzun:", words, "kelime")
 
     return {
         "topic": topic,
@@ -370,195 +214,38 @@ def parse(text, topic):
 def main():
 
     print("=" * 60)
-    print("          ARAŞTIRMALI SHORTS İÇERİK MOTORU")
+    print("          SHORTS İÇERİK MOTORU (SABİT KONU HAVUZU)")
     print("=" * 60)
+    print("Konu:", TOPIC)
 
-    if not os.path.exists(
-        TOPICS_FILE
-    ):
-        raise RuntimeError(
-            "shorts_topics.json bulunamadı. "
-            "Önce python shorts_brain.py çalıştır."
-        )
-
-    with open(
-        TOPICS_FILE,
-        "r",
-        encoding="utf-8"
-    ) as f:
-        data = json.load(f)
-
-    topics = data.get(
-        "topics",
-        []
-    )
-
-    if not topics:
-        raise RuntimeError(
-            "Hiç Shorts konusu bulunamadı."
-        )
-
-    contents = []
-
-    for i, item in enumerate(
-        topics,
-        1
-    ):
-
-        topic = item.get(
-            "topic",
-            ""
-        ).strip()
-
-        if not topic:
-            continue
+    try:
+        raw = generate(TOPIC)
+        parsed = parse(raw, TOPIC)
 
         print()
-        print(
-            f"[{i}/{len(topics)}] Hazırlanıyor:"
-        )
-        print(topic)
+        print("✅ Hazır |", parsed["word_count"], "kelime")
+        print("BAŞLIK:", parsed["title"])
 
-        research = load_research(
-            topic
-        )
-
-        if research:
-
-            print(
-                "🔎 Araştırma bulundu |",
-                research.get(
-                    "source_count",
-                    0
-                ),
-                "kaynak |",
-                research.get(
-                    "verification",
-                    {}
-                ).get(
-                    "status",
-                    "unknown"
-                )
-            )
-
-        else:
-
-            print(
-                "⚠️ Araştırma bulunamadı."
-            )
-
-        try:
-
-            raw = generate(
-                topic,
-                research
-            )
-
-            parsed = parse(
-                raw,
-                topic
-            )
-
-            parsed["source"] = item.get(
-                "source",
-                ""
-            )
-
-            parsed["type"] = item.get(
-                "type",
-                ""
-            )
-
-            parsed["score"] = item.get(
-                "score",
-                ""
-            )
-
-            if research:
-
-                parsed["research"] = {
-                    "source_count":
-                        research.get(
-                            "source_count",
-                            0
-                        ),
-
-                    "verification":
-                        research.get(
-                            "verification",
-                            {}
-                        ),
-
-                    "sources":
-                        research.get(
-                            "sources",
-                            []
-                        )
-                }
-
-            contents.append(
-                parsed
-            )
-
-            print(
-                "✅ Hazır |",
-                parsed["word_count"],
-                "kelime"
-            )
-
-            print(
-                "BAŞLIK:",
-                parsed["title"]
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ HATA:",
-                e
-            )
+    except Exception as e:
+        print("❌ HATA:", e)
+        raise SystemExit(1)
 
     result = {
-        "created_at":
-            datetime.now(
-                timezone.utc
-            ).isoformat(),
-
-        "count":
-            len(contents),
-
-        "contents":
-            contents
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "count": 1,
+        "contents": [parsed]
     }
 
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            result,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
 
     print()
     print("=" * 60)
-    print("SHORTS İÇERİKLERİ TAMAMLANDI")
+    print("SHORTS İÇERİĞİ TAMAMLANDI")
     print("=" * 60)
-
-    print(
-        "Üretilen içerik:",
-        len(contents)
-    )
-
-    print(
-        "Dosya:",
-        OUTPUT_FILE
-    )
+    print("Dosya:", OUTPUT_FILE)
 
 
 if __name__ == "__main__":
     main()
+                  
