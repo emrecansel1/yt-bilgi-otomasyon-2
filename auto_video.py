@@ -11,7 +11,6 @@ CONTENT = os.path.join(OUT, "current_content.txt")
 VOICE = os.path.join(OUT, "current_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "current_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "current_final.mp4")
-THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 
 TOPICS = [
     "Nikola Tesla'nın en şaşırtıcı icatları ve hayatındaki bilinmeyen olaylar",
@@ -64,7 +63,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🧠 1/6 İÇERİK OLUŞTURULUYOR...")
+    print("🧠 1/5 İÇERİK OLUŞTURULUYOR...")
 
     run(
         [
@@ -83,7 +82,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🎙️ 2/6 SES OLUŞTURULUYOR...")
+    print("🎙️ 2/5 SES OLUŞTURULUYOR...")
 
     run(
         [
@@ -103,7 +102,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🖼️ 3/6 GÖRSELLER BULUNUYOR...")
+    print("🖼️ 3/5 GÖRSELLER BULUNUYOR...")
 
     run(
         [
@@ -137,7 +136,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🎬 4/6 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
+    print("🎬 4/5 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
 
     temp_script = os.path.join(BASE, "_auto_visual.py")
 
@@ -180,7 +179,7 @@ def main():
     # --------------------------------------------------
 
     print()
-    print("🔊 5/6 SES VİDEOYA EKLENİYOR...")
+    print("🔊 5/5 SES VİDEOYA EKLENİYOR...")
 
     run(
         [
@@ -213,31 +212,11 @@ def main():
     print("================================")
 
     # --------------------------------------------------
-    # THUMBNAIL
+    # YOUTUBE'A YÜKLE
     # --------------------------------------------------
 
     print()
-    print("🖼️ THUMBNAIL OLUŞTURULUYOR...")
-
-    run(
-        [
-            sys.executable,
-            "thumbnail_generator.py"
-        ],
-        "THUMBNAIL MOTORU"
-    )
-
-    if not os.path.exists(THUMBNAIL):
-        raise SystemExit("❌ Thumbnail oluşturulamadı.")
-
-    print("✅ Thumbnail hazır:", THUMBNAIL)
-
-    # --------------------------------------------------
-    # 6. YOUTUBE'A YÜKLE
-    # --------------------------------------------------
-
-    print()
-    print("📤 6/6 YOUTUBE'A YÜKLENİYOR...")
+    print("📤 YOUTUBE'A YÜKLENİYOR...")
 
     run(
         [
@@ -260,7 +239,6 @@ def main():
     print("================================")
     print("🎯 Konu:", topic)
     print("📁 Video:", FINAL)
-    print("🖼️ Thumbnail:", THUMBNAIL)
     print(
         "💾 Boyut:",
         round(os.path.getsize(FINAL) / 1024 / 1024, 2),
