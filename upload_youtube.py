@@ -12,7 +12,6 @@ OUT = os.path.join(BASE, "output")
 
 TOKEN = "token.json"
 VIDEO = os.path.join(OUT, "current_final.mp4")
-THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 CONFIG = "config.json"
 CONTENT = os.path.join(OUT, "current_content.txt")
 
@@ -85,41 +84,6 @@ def parse_metadata_from_content():
     print("[DEBUG] Etiket bulundu mu:", tags is not None)
 
     return title, description, tags
-
-
-def upload_thumbnail(youtube, video_id):
-    """Oluşturulan thumbnail'i YouTube videosuna kapak olarak atar."""
-
-    if not os.path.exists(THUMBNAIL):
-        print("⚠️ Thumbnail bulunamadı:")
-        print(THUMBNAIL)
-        print("⚠️ Video thumbnail olmadan yüklendi.")
-        return False
-
-    print()
-    print("🖼️ YouTube thumbnail yükleniyor...")
-    print("📁 Thumbnail:", THUMBNAIL)
-
-    try:
-        thumbnail_media = MediaFileUpload(
-            THUMBNAIL,
-            mimetype="image/jpeg",
-            resumable=False
-        )
-
-        youtube.thumbnails().set(
-            videoId=video_id,
-            media_body=thumbnail_media
-        ).execute()
-
-        print("✅ Thumbnail YouTube'a başarıyla yüklendi.")
-        return True
-
-    except Exception as e:
-        print("⚠️ Thumbnail yüklenemedi:")
-        print(str(e))
-        print("⚠️ Video yine de YouTube'a yüklenmiş durumda.")
-        return False
 
 
 def upload():
@@ -263,22 +227,9 @@ def upload():
 
     print("=" * 40)
 
-    # --------------------------------------------------
-    # THUMBNAIL
-    # --------------------------------------------------
-
-    upload_thumbnail(
-        youtube,
-        video_id
-    )
-
-    print()
-    print("=" * 40)
-    print("🎉 VİDEO + THUMBNAIL TAMAMLANDI")
-    print("=" * 40)
-
     return video_id
 
 
 if __name__ == "__main__":
     upload()
+    
