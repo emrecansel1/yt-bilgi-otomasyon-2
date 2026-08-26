@@ -1,7 +1,6 @@
 import os
 import json
 import subprocess
-import hashlib
 import textwrap
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
@@ -14,23 +13,6 @@ CONCAT = os.path.join(OUT, "shorts_unique_visuals.txt")
 VIDEO = os.path.join(OUT, "shorts_video_no_audio.mp4")
 
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-
-MIN_SCENE_DURATION = 1.2
-
-
-def file_hash(path):
-    h = hashlib.sha256()
-
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1024 * 1024)
-
-            if not chunk:
-                break
-
-            h.update(chunk)
-
-    return h.hexdigest()
 
 
 def escape_drawtext(text):
@@ -60,89 +42,44 @@ voice_duration = float(
 with open(MANIFEST, encoding="utf-8") as f:
     manifest = json.load(f)
 
-# --- Gerçek sahne sürelerini oku (voiceover.py'nin ürettiği) ---
+with open(DURATIONS_FILE, encoding="utf-8") as f:
+    scene_duration_data = json.load(f)
 
-real_durations = None
-
-if os.path.isfile(DURATIONS_FILE):
-    with open(DURATIONS_FILE, encoding="utf-8") as f:
-        scene_duration_data = json.load(f)
-    real_durations = [item["duration"] for item in scene_duration_data]
-    real_texts = [item["text"] for item in scene_duration_data]
-else:
-    print("⚠️ shorts_scene_durations.json bulunamadı, tahmini süre kullanılacak.")
-
-items = []
-hashes = set()
-
-for item in manifest:
-
-    path = item.get("file")
-    scene_text = item.get("scene_text", "")
-
-    if not path:
-        continue
-
-    if not os.path.exists(path):
-        continue
-
-    try:
-        h = file_hash(path)
-    except Exception:
-        continue
-
-    if h in hashes:
-        continue
-
-    hashes.add(h)
-
-    items.append((path, scene_text))
+real_durations = [item["duration"] for item in scene_duration_data]
+real_texts = [item["text"] for item in scene_duration_data]
 
 print("================================")
-print("🧠 SHORTS DİKEY GÖRSEL MOTORU (GERÇEK SÜRE SENKRONU)")
+print("🧠 SHORTS DİKEY GÖRSEL MOTORU (BİREBİR SAHNE EŞLEMESİ)")
 print("================================")
 print("Ses:", round(voice_duration, 2), "saniye")
-print("Benzersiz görsel:", len(items))
+print("Manifest kaydı:", len(manifest))
+print("Sahne süre kaydı:", len(real_durations))
 print()
 
-if not items:
-    raise SystemExit("Hiç görsel yok.")
+# --- ÖNEMLİ: Artık hiçbir dedup/atlama yapmıyoruz. ---
+# Her sahne (manifest'teki her kayıt) kendi sırasında, kendi görseliyle
+# kullanılır — görsel aynı bile olsa. Böylece:
+# sequence uzunluğu == real_durations uzunluğu == real_texts uzunluğu
+# HER ZAMAN garanti edilir, altyazı asla kaymaz/üst üste binmez.
 
-sequence = [path for path, _ in items]
-scene_texts = [text for _, text in items]
+sequence = [item["file"] for item in manifest]
 
-# --- Süreleri hesapla ---
+if len(sequence) != len(real_durations):
+    raise SystemExit(
+        f"❌ KRİTİK HATA: manifest sahne sayısı ({len(sequence)}) ile "
+        f"ses sahne sayısı ({len(real_durations)}) uyuşmuyor. "
+        f"shorts_get_visuals.py her sahne için mutlaka bir kayıt üretmeli."
+    )
 
-if real_durations and len(real_durations) == len(sequence):
-    print("✅ Gerçek Piper sürelerine göre senkronize ediliyor.")
-    durations = list(real_durations)
-    scene_texts = list(real_texts)
-else:
-    if real_durations:
-        print("⚠️ Görsel sayısı ile sahne sayısı uyuşmuyor, orantılı tahmine dönülüyor.")
-        print("   Görsel:", len(sequence), "| Sahne süre kaydı:", len(real_durations))
-
-    char_counts = [max(len(t.strip()), 1) for t in scene_texts]
-    total_chars = sum(char_counts)
-
-    durations = [
-        (c / total_chars) * voice_duration
-        for c in char_counts
-    ]
-
-    for i, d in enumerate(durations):
-        if d < MIN_SCENE_DURATION:
-            durations[i] = MIN_SCENE_DURATION
-
-    scale = voice_duration / sum(durations)
-    durations = [d * scale for d in durations]
+durations = list(real_durations)
+scene_texts = list(real_texts)
 
 # Toplam süreyi ses uzunluğuna kesin eşitle (yuvarlama farkını son sahneye ekle)
 diff = voice_duration - sum(durations)
 durations[-1] += diff
 
+print("✅ Sahne sayıları birebir eşleşiyor, gerçek sürelerle devam ediliyor.")
 print("Toplam görsel süresi:", round(sum(durations), 2), "sn")
-print("Ses süresi:", round(voice_duration, 2), "sn")
 print()
 
 with open(CONCAT, "w", encoding="utf-8") as f:
@@ -160,10 +97,10 @@ with open(CONCAT, "w", encoding="utf-8") as f:
 
     f.write(f"file '{last}'\n")
 
-print("Görsel geçişleri:", len(sequence))
+print("Görsel geçişleri (sahne sayısı):", len(sequence))
 print()
 
-# --- Altyazı zamanlaması (aynı gerçek sürelere göre) ---
+# --- Altyazı zamanlaması: kümülatif, üst üste binmesi imkansız ---
 
 starts = []
 cursor = 0.0
@@ -182,7 +119,9 @@ for text, start, duration in zip(scene_texts, starts, durations):
     wrapped = wrap_for_subtitle(text)
     wrapped = escape_drawtext(wrapped)
 
-    end = start + duration
+    # Küçük bir güvenlik payı: bitişten 0.02 sn önce kapat,
+    # bir sonraki sahnenin başlangıcıyla asla çakışmasın.
+    end = start + duration - 0.02
 
     drawtext_filters.append(
         "drawtext=fontfile='" + FONT_PATH + "'"
@@ -211,7 +150,7 @@ if drawtext_filters:
 else:
     vf = vf_base
 
-print("🎬 Dikey (Shorts) video oluşturuluyor (gerçek senkron altyazılı)...")
+print("🎬 Dikey (Shorts) video oluşturuluyor (kesin senkron altyazılı)...")
 
 cmd = [
     "ffmpeg", "-y",
@@ -234,7 +173,7 @@ if result.returncode != 0:
 
 print()
 print("================================")
-print("✅ SHORTS DİKEY GÖRSELLİ VİDEO (GERÇEK SENKRON)")
+print("✅ SHORTS DİKEY GÖRSELLİ VİDEO (KESİN SENKRON)")
 print("================================")
 print("Dosya:", VIDEO)
 print("Görsel:", len(sequence))
