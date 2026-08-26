@@ -66,6 +66,23 @@ KANAL TARZI:
 - Kısa ve vurucu cümleler.
 - İLK CÜMLE bir soru, şaşırtıcı bir gerçek veya çarpıcı bir
   iddia ile başlamalı ve izleyiciyi anında yakalamalı.
+- KESİNLİKLE ŞU AÇILIŞLARI KULLANMA (klişe/otomasyon kokan,
+  izleyici artık bunları görünce direkt kaydırıyor):
+  "Biliyor muydunuz ki", "Az bilinen bir gerçek", "Şunu
+  biliyor musun", "İşte size ... hakkında X şey",
+  "Bugün size ... anlatacağım", "Hazır mısınız", herhangi bir
+  selamlama veya kanal/konu tanıtımıyla başlamak.
+- Bunun yerine şu açılış tarzlarından birini kullan (her
+  seferinde farklısını dene, hep aynı kalıba düşme):
+  1) Doğrudan şok edici bir iddiayla aç (örn. "X, aslında Y
+     yüzünden ölmüştü." gibi net bir cümle).
+  2) Beklenmedik bir soruyla aç, ama "biliyor musunuz"
+     kalıbını kullanmadan (örn. "Neden X hiçbir zaman Y
+     yapmadı?").
+  3) Ortadan başlayan bir sahneyle aç (izleyiciyi olayın tam
+     ortasına düşür, arka plan sonra gelsin).
+- Açılış cümlesi en fazla 8-10 kelime olsun, tek nefeste
+  söylenebilmeli.
 - "Merhaba arkadaşlar" gibi giriş yapma.
 - Video ortasında hiç durgunluk olmasın, her cümle bir
   öncekinden daha meraklandırıcı olsun.
@@ -248,4 +265,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                  
