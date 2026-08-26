@@ -1,240 +1,320 @@
 import os
-import subprocess
-import sys
+import re
 import json
-import random
+import time
+import requests
+import hashlib
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
+VISUALS = os.path.join(OUT, "shorts_visuals")
+CONTENT = os.path.join(OUT, "shorts_script.txt")
+MANIFEST = os.path.join(OUT, "shorts_visual_manifest.json")
 
-REPO_BASE = os.path.dirname(os.path.abspath(__file__))
+os.makedirs(VISUALS, exist_ok=True)
 
-CONTENT_JSON = os.path.join(REPO_BASE, "shorts_content.json")
-TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
-
-SCRIPT_TEXT = os.path.join(OUT, "shorts_script.txt")
-VOICE = os.path.join(OUT, "shorts_voice.wav")
-VIDEO_NO_AUDIO = os.path.join(OUT, "shorts_video_no_audio.mp4")
-FINAL = os.path.join(OUT, "shorts_final.mp4")
-META_FILE = os.path.join(OUT, "shorts_meta.json")
-
-TOPICS = [
-    "Tuval kağıdı neden icat edildi",
-    "Nikola Tesla'nın en tuhaf icadı",
-    "Thomas Edison'ın başarısız olan icadı",
-    "Fransız kaşiflerin unutulmuş keşfi",
-    "Yazının icat edilme hikayesi",
-    "İlk fotoğraf makinesinin icadı",
-    "Antibiyotiğin tesadüfen keşfi",
-    "İlk telefonun icat edilme hikayesi",
-    "Uçağın icadından önce yapılan garip denemeler",
-    "İlk bilgisayarın icat edilme hikayesi",
-    "Buharlı makinenin icadı ve etkisi",
-    "İlk aşının keşfedilme hikayesi",
-    "Elektriğin keşfedilme süreci",
-    "İlk otomobilin icadı",
-    "Röntgenin tesadüfen keşfi",
-    "İlk saatin icat edilme hikayesi",
-    "Kağıt paranın icadı",
-    "İlk matbaa makinesinin icadı",
-    "Dinamitin icadı ve Nobel'in hikayesi",
-    "İlk buzdolabının icadı",
-]
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "YTBilgiUzunShorts/1.0"
+})
 
 
-def run(cmd, name):
-    print()
-    print("=" * 40)
-    print(name)
-    print("=" * 40)
+def clean_text(text):
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
-    result = subprocess.run(cmd)
 
-    if result.returncode != 0:
-        raise SystemExit(f"❌ HATA: {name}")
+def get_scenes(text):
+    text = clean_text(text)
+
+    sentences = re.split(
+        r"(?<=[.!?])\s+",
+        text
+    )
+
+    scenes = [
+        s.strip()
+        for s in sentences
+        if len(s.strip()) >= 15
+    ]
+
+    return scenes
+
+
+def make_queries(scene):
+    scene_short = scene[:200]
+
+    tr = f"{scene_short[:100]} haber görsel"
+    en = f"{scene_short[:120]} news photo"
+
+    return tr[:180], en[:180]
+
+
+def pexels_search(query):
+    key = os.environ.get("PEXELS_API_KEY")
+
+    if not key:
+        print("      Pexels API key yok.")
+        return []
+
+    url = "https://api.pexels.com/v1/search"
+
+    headers = {"Authorization": key}
+
+    params = {
+        "query": query,
+        "per_page": 30,
+        "orientation": "portrait"
+    }
+
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        results = []
+
+        for photo in data.get("photos", []):
+            src = photo.get("src", {})
+
+            image = (
+                src.get("portrait")
+                or src.get("large2x")
+                or src.get("large")
+                or src.get("original")
+            )
+
+            if image:
+                results.append(image)
+
+        return results
+
+    except Exception as e:
+        print("      Pexels hata:", e)
+        return []
+
+
+def wikimedia_search(query):
+    url = "https://commons.wikimedia.org/w/api.php"
+
+    params = {
+        "action": "query",
+        "format": "json",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrnamespace": 6,
+        "gsrlimit": 50,
+        "prop": "imageinfo",
+        "iiprop": "url|mime"
+    }
+
+    try:
+        r = session.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        results = []
+
+        pages = data.get("query", {}).get("pages", {})
+
+        for page in pages.values():
+            info = page.get("imageinfo", [])
+
+            if not info:
+                continue
+
+            item = info[0]
+            url2 = item.get("url")
+            mime = item.get("mime", "")
+
+            if url2 and mime.startswith("image/"):
+                results.append(url2)
+
+        return results
+
+    except Exception as e:
+        print("      Wikimedia hata:", e)
+        return []
+
+
+def download_image(url, path):
+    try:
+        r = session.get(url, timeout=40, stream=True)
+        r.raise_for_status()
+
+        ctype = r.headers.get("content-type", "").lower()
+
+        if not ctype.startswith("image/"):
+            return False
+
+        with open(path, "wb") as f:
+            for chunk in r.iter_content(65536):
+                if chunk:
+                    f.write(chunk)
+
+        if not os.path.exists(path):
+            return False
+
+        if os.path.getsize(path) < 10000:
+            os.remove(path)
+            return False
+
+        return True
+
+    except Exception:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except:
+            pass
+        return False
+
+
+def image_hash(path):
+    try:
+        h = hashlib.sha256()
+
+        with open(path, "rb") as f:
+            while True:
+                data = f.read(1024 * 1024)
+                if not data:
+                    break
+                h.update(data)
+
+        return h.hexdigest()
+
+    except:
+        return None
 
 
 def main():
-
-    os.makedirs(OUT, exist_ok=True)
-
     print("================================")
-    print("🤖 TAM OTOMATİK SHORTS SİSTEMİ")
+    print("🧠 SHORTS GÖRSEL MOTORU")
     print("================================")
 
-    # --------------------------------------------------
-    # 1. KONU SEÇİMİ (sabit konu havuzu)
-    # --------------------------------------------------
+    with open(CONTENT, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    topic = random.choice(TOPICS)
+    scenes = get_scenes(content)
 
+    print("Cümle sayısı:", len(scenes))
     print()
-    print("🧠 1/6 SHORTS KONUSU SEÇİLİYOR...")
-    print("🎯 Seçilen konu:", topic)
 
-    with open(TOPIC_FILE, "w", encoding="utf-8") as f:
-        f.write(topic)
+    for file in os.listdir(VISUALS):
+        path = os.path.join(VISUALS, file)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except:
+                pass
 
-    # --------------------------------------------------
-    # 2. İÇERİK ÜRETİMİ
-    # --------------------------------------------------
+    manifest = []
+    used_urls = set()
+    used_hashes = set()
+    success = 0
+    last_good_path = None
 
-    print()
-    print("✍️ 2/6 SHORTS METNİ YAZILIYOR...")
+    for i, scene in enumerate(scenes, 1):
 
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "shorts_content.py"),
-            topic
-        ],
-        "SHORTS İÇERİK MOTORU"
-    )
+        if len(scene) < 15:
+            continue
 
-    if not os.path.exists(CONTENT_JSON):
-        raise SystemExit("❌ shorts_content.json oluşmadı.")
+        tr, en = make_queries(scene)
 
-    with open(CONTENT_JSON, encoding="utf-8") as f:
-        data = json.load(f)
+        print(f"[{i}/{len(scenes)}]")
+        print("🎬 CÜMLE:", scene[:100])
 
-    contents = data.get("contents", [])
+        sources = [
+            ("Pexels", pexels_search, en),
+            ("Wikimedia Commons", wikimedia_search, en),
+            ("Wikimedia Commons TR", wikimedia_search, tr),
+        ]
 
-    if not contents:
-        raise SystemExit("❌ shorts_content.json içinde içerik yok.")
+        selected = None
+        selected_source = None
 
-    item = contents[0]
+        for source_name, search, query in sources:
+            print("   🔎", source_name)
 
-    script_text = item.get("script", "").strip()
-    title = item.get("title", "").strip()
-    description = item.get("description", "").strip()
-    tags = item.get("tags", "").strip()
+            urls = search(query)
 
-    if not script_text:
-        raise SystemExit("❌ Shorts metni boş.")
+            for url in urls:
+                if not url or url in used_urls:
+                    continue
 
-    with open(SCRIPT_TEXT, "w", encoding="utf-8") as f:
-        f.write(script_text)
+                filename = f"shorts_visual_{success + 1:03d}.jpg"
+                path = os.path.join(VISUALS, filename)
 
-    meta = {
-        "title": title,
-        "description": description,
-        "tags": tags
-    }
+                if not download_image(url, path):
+                    continue
 
-    with open(META_FILE, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+                h = image_hash(path)
 
-    print()
-    print("🎬 Başlık:", title)
-    print("📝 Kelime sayısı:", len(script_text.split()))
+                if h in used_hashes:
+                    try:
+                        os.remove(path)
+                    except:
+                        pass
+                    continue
 
-    # --------------------------------------------------
-    # 3. SES
-    # --------------------------------------------------
+                used_urls.add(url)
 
-    print()
-    print("🎙️ 3/6 SES OLUŞTURULUYOR...")
+                if h:
+                    used_hashes.add(h)
 
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "voiceover.py"),
-            SCRIPT_TEXT,
-            VOICE
-        ],
-        "SES MOTORU"
-    )
+                selected = path
+                selected_source = source_name
+                break
 
-    if not os.path.exists(VOICE):
-        raise SystemExit("❌ shorts_voice.wav oluşmadı.")
+            if selected:
+                break
 
-    # --------------------------------------------------
-    # 4. GÖRSELLER VE DİKEY VİDEO
-    # --------------------------------------------------
+        # --- HİÇ GÖRSEL BULUNAMAZSA: cümleyi atlama, önceki görseli tekrar kullan ---
+        if not selected and last_good_path:
+            selected = last_good_path
+            selected_source = "Tekrar kullanılan görsel (yeni bulunamadı)"
+            print("   ♻️ Yeni görsel bulunamadı, bir önceki görsel tekrar kullanılıyor.")
 
-    print()
-    print("🖼️ 4/6 GÖRSELLER BULUNUYOR VE VİDEO OLUŞTURULUYOR...")
+        if selected:
+            manifest.append({
+                "scene": i,
+                "scene_text": scene,
+                "query_tr": tr,
+                "query_en": en,
+                "file": selected,
+                "source": selected_source
+            })
 
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "shorts_get_visuals.py")
-        ],
-        "GÖRSEL MOTORU"
-    )
+            if selected != last_good_path:
+                success += 1
 
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "shorts_visual_video.py")
-        ],
-        "GÖRSELLİ VİDEO MOTORU"
-    )
+            last_good_path = selected
 
-    if not os.path.exists(VIDEO_NO_AUDIO):
-        raise SystemExit("❌ shorts_video_no_audio.mp4 oluşmadı.")
+            print(f"   ✅ {selected_source}")
 
-    # --------------------------------------------------
-    # 5. SES + VİDEO BİRLEŞTİRME
-    # --------------------------------------------------
+        else:
+            # İlk cümle için bile hiç görsel bulunamadıysa, gerçekten atlanacak
+            # tek durum budur (elimizde tekrar kullanılacak önceki görsel yok).
+            print("   ⚠️ Görsel bulunamadı ve tekrar kullanılacak önceki görsel yok.")
 
-    print()
-    print("🔊 5/6 SES VİDEOYA EKLENİYOR...")
+        print()
+        time.sleep(0.2)
 
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i", VIDEO_NO_AUDIO,
-            "-i", VOICE,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-c:v", "copy",
-            "-c:a", "aac", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
-            "-b:a", "128k",
-            "-shortest",
-            "-movflags", "+faststart",
-            FINAL
-        ],
-        "FİNAL VİDEO"
-    )
+    # --- GÜVENLİK KONTROLÜ: manifest uzunluğu cümle sayısıyla eşleşmeli ---
+    if len(manifest) != len(scenes):
+        print(f"⚠️ UYARI: manifest ({len(manifest)}) ile cümle sayısı ({len(scenes)}) uyuşmuyor.")
+        print("   Bu durum sadece ilk cümlede hiç görsel bulunamazsa oluşur.")
 
-    if not os.path.exists(FINAL):
-        raise SystemExit("❌ shorts_final.mp4 oluşmadı.")
+    with open(MANIFEST, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    # --------------------------------------------------
-    # 6. YOUTUBE'A YÜKLE
-    # --------------------------------------------------
-
-    print()
-    print("📤 6/6 YOUTUBE SHORTS'A YÜKLENİYOR...")
-
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "upload_youtube_shorts.py")
-        ],
-        "YOUTUBE SHORTS YÜKLEYİCİ"
-    )
-
-    if os.path.exists(VIDEO_NO_AUDIO):
-        os.remove(VIDEO_NO_AUDIO)
-
-    print()
     print("================================")
-    print("🎉 SHORTS VİDEO HAZIR")
+    print("✅ SHORTS GÖRSEL ARAMA BİTTİ")
     print("================================")
-    print("🎯 Konu:", topic)
-    print("🎬 Başlık:", title)
-    print("📁 Dosya:", FINAL)
-    print(
-        "💾 Boyut:",
-        round(os.path.getsize(FINAL) / 1024 / 1024, 2),
-        "MB"
-    )
-    print("================================")
+    print(f"Başarılı (benzersiz): {success} / {len(scenes)}")
+    print(f"Toplam manifest kaydı: {len(manifest)}")
+    print("Manifest:", MANIFEST)
 
 
 if __name__ == "__main__":
     main()
-    
