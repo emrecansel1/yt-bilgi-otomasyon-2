@@ -9,6 +9,7 @@ OUT = os.path.join(BASE, "output")
 VISUALS = os.path.join(OUT, "shorts_visuals")
 DURATIONS_FILE = os.path.join(OUT, "shorts_scene_durations.json")
 MANIFEST = os.path.join(OUT, "shorts_visual_manifest.json")
+TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
 
 os.makedirs(VISUALS, exist_ok=True)
 
@@ -17,11 +18,30 @@ session.headers.update({
     "User-Agent": "YTBilgiUzunShorts/1.0"
 })
 
+GENERIC_FALLBACK_QUERIES_EN = [
+    "old vintage photo history",
+    "ancient artifact museum",
+    "historical document archive",
+    "black and white history photo",
+    "science laboratory vintage",
+    "old map exploration",
+    "antique object closeup",
+    "historic building architecture",
+    "dramatic sky abstract",
+    "old book library",
+]
+
+
+def get_topic():
+    if os.path.exists(TOPIC_FILE):
+        with open(TOPIC_FILE, encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
 
 def get_scenes():
-    # ARTIK KENDİ CÜMLE BÖLMEMİZİ YAPMIYORUZ.
-    # voiceover.py'nin seslendirdiği GERÇEK cümle listesini birebir kullanıyoruz,
-    # böylece görsel ve ses arasında asla sahne uyuşmazlığı olmaz.
+    # Ses motorunun (voiceover.py) ürettiği GERÇEK cümle listesini birebir
+    # kullanıyoruz, böylece görsel ile ses arasında asla sahne uyuşmazlığı olmaz.
     if not os.path.exists(DURATIONS_FILE):
         raise FileNotFoundError(
             "shorts_scene_durations.json bulunamadı. "
@@ -36,13 +56,14 @@ def get_scenes():
     return scenes
 
 
-def make_queries(scene):
+def make_queries(scene, topic):
     scene_short = scene[:200]
 
     tr = f"{scene_short[:100]} haber görsel"
     en = f"{scene_short[:120]} news photo"
+    topic_en = f"{topic[:100]} history photo" if topic else ""
 
-    return tr[:180], en[:180]
+    return tr[:180], en[:180], topic_en[:180]
 
 
 def pexels_search(query):
@@ -182,13 +203,48 @@ def image_hash(path):
         return None
 
 
+def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
+    for source_name, search, query in sources:
+        if not query:
+            continue
+
+        print("   🔎", source_name, "-", query[:50])
+
+        urls = search(query)
+
+        for url in urls:
+            if not url or url in used_urls:
+                continue
+
+            filename = f"shorts_visual_{success + 1:03d}.jpg"
+            path = os.path.join(visuals_dir, filename)
+
+            if not download_image(url, path):
+                continue
+
+            h = image_hash(path)
+
+            if h in used_hashes:
+                try:
+                    os.remove(path)
+                except:
+                    pass
+                continue
+
+            return path, source_name, url, h
+
+    return None, None, None, None
+
+
 def main():
     print("================================")
-    print("🧠 SHORTS GÖRSEL MOTORU (SES İLE BİREBİR AYNI SAHNELER)")
+    print("🧠 SHORTS GÖRSEL MOTORU (HER CÜMLE FARKLI GÖRSEL)")
     print("================================")
 
+    topic = get_topic()
     scenes = get_scenes()
 
+    print("Konu:", topic)
     print("Cümle sayısı (ses ile birebir aynı):", len(scenes))
     print()
 
@@ -208,62 +264,54 @@ def main():
 
     for i, scene in enumerate(scenes, 1):
 
-        tr, en = make_queries(scene)
+        tr, en, topic_en = make_queries(scene, topic)
 
         print(f"[{i}/{len(scenes)}]")
         print("🎬 CÜMLE:", scene[:100])
 
+        # 1. Öncelik: cümleye özel arama
         sources = [
-            ("Pexels", pexels_search, en),
-            ("Wikimedia Commons", wikimedia_search, en),
-            ("Wikimedia Commons TR", wikimedia_search, tr),
+            ("Pexels (cümle)", pexels_search, en),
+            ("Wikimedia (cümle EN)", wikimedia_search, en),
+            ("Wikimedia (cümle TR)", wikimedia_search, tr),
         ]
 
-        selected = None
-        selected_source = None
+        selected, selected_source, url, h = try_sources(
+            sources, used_urls, used_hashes, success, VISUALS
+        )
 
-        for source_name, search, query in sources:
-            print("   🔎", source_name)
+        # 2. Bulunamazsa: konunun genel haliyle arama
+        if not selected and topic_en:
+            sources2 = [
+                ("Pexels (konu geneli)", pexels_search, topic_en),
+                ("Wikimedia (konu geneli)", wikimedia_search, topic_en),
+            ]
+            selected, selected_source, url, h = try_sources(
+                sources2, used_urls, used_hashes, success, VISUALS
+            )
 
-            urls = search(query)
+        # 3. Hâlâ bulunamazsa: rastgele genel görsel havuzundan dene
+        if not selected:
+            generic_sources = [
+                ("Pexels (genel havuz)", pexels_search, q)
+                for q in GENERIC_FALLBACK_QUERIES_EN
+            ]
+            selected, selected_source, url, h = try_sources(
+                generic_sources, used_urls, used_hashes, success, VISUALS
+            )
 
-            for url in urls:
-                if not url or url in used_urls:
-                    continue
-
-                filename = f"shorts_visual_{success + 1:03d}.jpg"
-                path = os.path.join(VISUALS, filename)
-
-                if not download_image(url, path):
-                    continue
-
-                h = image_hash(path)
-
-                if h in used_hashes:
-                    try:
-                        os.remove(path)
-                    except:
-                        pass
-                    continue
-
-                used_urls.add(url)
-
-                if h:
-                    used_hashes.add(h)
-
-                selected = path
-                selected_source = source_name
-                break
-
-            if selected:
-                break
-
+        # 4. Son çare: bir önceki görseli tekrar kullan (nadiren olmalı)
         if not selected and last_good_path:
             selected = last_good_path
-            selected_source = "Tekrar kullanılan görsel (yeni bulunamadı)"
-            print("   ♻️ Yeni görsel bulunamadı, bir önceki görsel tekrar kullanılıyor.")
+            selected_source = "Tekrar kullanılan görsel (hiçbir kaynak bulunamadı)"
+            print("   ♻️ Hiçbir yeni görsel bulunamadı, bir önceki görsel kullanılıyor.")
+        elif selected:
+            used_urls.add(url)
+            if h:
+                used_hashes.add(h)
+            success += 1
+            last_good_path = selected
 
-        # HER SAHNE İÇİN MUTLAKA BİR KAYIT OLUŞTURULUR (senkron garantisi)
         manifest.append({
             "scene": i,
             "scene_text": scene,
@@ -274,20 +322,16 @@ def main():
         })
 
         if selected:
-            if selected != last_good_path:
-                success += 1
-            last_good_path = selected
             print(f"   ✅ {selected_source}")
         else:
-            print("   ⚠️ Hiç görsel bulunamadı (ilk sahne olabilir).")
+            print("   ⚠️ Hiç görsel bulunamadı.")
 
         print()
         time.sleep(0.2)
 
-    # Manifest'te dosyası olmayan (ilk sahnede hiç görsel bulunamadıysa) kayıtları
-    # bir sonraki bulunan görselle geriye doğru doldur.
+    # İlk sahne(ler)de hiç görsel bulunamadıysa, sonradan bulunan ilk görselle geriye doldur
     fallback = None
-    for item in reversed(manifest):
+    for item in manifest:
         if item["file"]:
             fallback = item["file"]
             break
@@ -303,7 +347,7 @@ def main():
     print("================================")
     print("✅ SHORTS GÖRSEL ARAMA BİTTİ")
     print("================================")
-    print(f"Başarılı (benzersiz): {success} / {len(scenes)}")
+    print(f"Benzersiz görsel: {success} / {len(scenes)}")
     print(f"Toplam manifest kaydı: {len(manifest)} (sahne sayısıyla birebir aynı)")
     print("Manifest:", MANIFEST)
 
