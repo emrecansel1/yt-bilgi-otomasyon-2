@@ -1,4 +1,3 @@
-cat > upload_youtube.py << 'PYEOF'
 import os
 import json
 import re
@@ -264,10 +263,6 @@ def upload():
 
     print("=" * 40)
 
-    # --------------------------------------------------
-    # THUMBNAIL
-    # --------------------------------------------------
-
     upload_thumbnail(
         youtube,
         video_id
@@ -283,4 +278,4 @@ def upload():
 
 if __name__ == "__main__":
     upload()
-PYEOF
+        
