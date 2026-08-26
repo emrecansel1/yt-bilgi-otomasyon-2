@@ -13,10 +13,9 @@ VOICE = os.path.join(OUT, "shorts_voice.wav")
 CONCAT = os.path.join(OUT, "shorts_unique_visuals.txt")
 VIDEO = os.path.join(OUT, "shorts_video_no_audio.mp4")
 
-# Sistemde bulunan bir Türkçe karakter destekli font.
-# GitHub Actions (ubuntu-latest) için workflow'a şunu eklemen gerekiyor:
-#   sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+MIN_SCENE_DURATION = 1.2  # bir görsel/altyazının alabileceği en kısa süre (sn)
 
 voice_cmd = [
     "ffprobe", "-v", "error",
@@ -49,17 +48,16 @@ def file_hash(path):
 
 
 def escape_drawtext(text):
-    # ffmpeg drawtext için özel karakterleri kaçır
     text = text.replace("\\", "\\\\")
     text = text.replace(":", "\\:")
-    text = text.replace("'", "\u2019")  # tek tırnağı kapalı tırnakla değiştir
+    text = text.replace("'", "\u2019")
     text = text.replace("%", "\\%")
     return text
 
 
 def wrap_for_subtitle(text, width=28):
     lines = textwrap.wrap(text, width=width)
-    return "\n".join(lines[:3])  # en fazla 3 satır
+    return "\n".join(lines[:3])
 
 
 items = []
@@ -103,20 +101,28 @@ random.seed(2026)
 sequence = [path for path, _ in items]
 scene_texts = [text for _, text in items]
 
-average = voice_duration / len(sequence)
+# --- Süreleri cümle uzunluğuna ORANTILI hesapla (eşit bölmek yerine) ---
 
-print("Ortalama görsel süresi:",
-      round(average, 2),
-      "saniye")
-
-if average < 2.5:
-    average = 2.5
+char_counts = [max(len(t.strip()), 1) for t in scene_texts]
+total_chars = sum(char_counts)
 
 durations = [
-    average for _ in sequence
+    (c / total_chars) * voice_duration
+    for c in char_counts
 ]
 
-durations[-1] += voice_duration - sum(durations)
+# Çok kısa süreleri taban değere çek, farkı diğerlerinden orantılı düş
+for i, d in enumerate(durations):
+    if d < MIN_SCENE_DURATION:
+        durations[i] = MIN_SCENE_DURATION
+
+# Toplamı tekrar voice_duration'a eşitle (yuvarlama farklarını gider)
+scale = voice_duration / sum(durations)
+durations = [d * scale for d in durations]
+
+print("Görsel süreleri cümle uzunluğuna göre orantılandı.")
+print("Ortalama süre:", round(voice_duration / len(sequence), 2), "sn")
+print()
 
 with open(CONCAT, "w", encoding="utf-8") as f:
 
@@ -137,7 +143,7 @@ print("Görsel geçişleri:", len(sequence))
 print("Toplam süre:", round(sum(durations), 2))
 print()
 
-# --- Altyazı zamanlamasını hesapla ---
+# --- Altyazı zamanlamasını hesapla (aynı orantılı sürelere göre) ---
 
 starts = []
 cursor = 0.0
