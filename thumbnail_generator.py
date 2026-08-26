@@ -1,9 +1,10 @@
+cat > thumbnail_generator.py << 'PYEOF'
 import os
 import re
 import random
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 VISUALS = os.path.join(OUT, "visuals")
 CONTENT = os.path.join(OUT, "current_content.txt")
@@ -63,8 +64,6 @@ def choose_best_visual(files):
     if not files:
         return None
 
-    # İlk görsel yerine rastgele birkaç görsel arasından seçim.
-    # Böylece her videonun kapağı aynı sahneden oluşmaz.
     candidates = files[:min(len(files), 8)]
 
     return random.choice(candidates)
@@ -73,8 +72,6 @@ def choose_best_visual(files):
 def make_short_text(title):
     title = re.sub(r"\s+", " ", title).strip()
 
-    # Thumbnail'de uzun YouTube başlığı kullanmak yerine
-    # kısa ve vurucu metin oluştur.
     replacements = {
         "Okyanusların Keşfedilmemiş Gizemleri": "OKYANUSLARIN GİZEMİ",
         "Antik Mısır'ın Çözülemeyen Gizemleri": "MISIR'IN ÇÖZÜLEMEYEN SIRRI",
@@ -87,7 +84,6 @@ def make_short_text(title):
         if key.lower() in title.lower():
             return value
 
-    # Başlığı kısa hale getir.
     words = title.split()
 
     if len(words) > 6:
@@ -146,6 +142,7 @@ def make_thumbnail():
 
     if not files:
         print("❌ Thumbnail için görsel bulunamadı.")
+        print("🔍 Aranan klasör:", VISUALS)
         return False
 
     source = choose_best_visual(files)
@@ -155,16 +152,13 @@ def make_thumbnail():
     image = Image.open(source).convert("RGB")
     image = fit_cover(image)
 
-    # Hafif kontrast ve renk güçlendirme.
     image = ImageEnhance.Contrast(image).enhance(1.18)
     image = ImageEnhance.Color(image).enhance(1.12)
 
-    # Hafif keskinlik.
     image = image.filter(ImageFilter.SHARPEN)
 
     draw = ImageDraw.Draw(image, "RGBA")
 
-    # Sol tarafta okunabilir koyu geçiş.
     for x in range(0, 720, 20):
         alpha = int(205 * (1 - x / 760))
         if alpha < 0:
@@ -175,7 +169,6 @@ def make_thumbnail():
             fill=(0, 0, 0, alpha)
         )
 
-    # Üst küçük kanal etiketi.
     small_font = get_font(30)
 
     draw.rounded_rectangle(
@@ -194,10 +187,8 @@ def make_thumbnail():
     title = get_metadata()["title"]
     short_text = make_short_text(title)
 
-    # Büyük vurucu yazı.
     font = get_font(72)
 
-    # Gerekirse fontu küçült.
     while draw.textbbox(
         (0, 0),
         short_text,
@@ -206,7 +197,6 @@ def make_thumbnail():
 
         font = get_font(font.size - 4)
 
-    # Satırları otomatik oluştur.
     words = short_text.split()
 
     lines = []
@@ -250,7 +240,6 @@ def make_thumbnail():
 
         x = 55
 
-        # Kalın siyah dış çizgi.
         draw.text(
             (x, y),
             line,
@@ -260,7 +249,6 @@ def make_thumbnail():
             stroke_fill=(0, 0, 0, 255)
         )
 
-        # Hafif renkli vurgu.
         if i == 0:
             draw.text(
                 (x, y),
@@ -273,7 +261,6 @@ def make_thumbnail():
 
         y += 90
 
-    # Sağ alt küçük merak etiketi.
     badge_font = get_font(28)
 
     draw.rounded_rectangle(
@@ -310,3 +297,4 @@ def make_thumbnail():
 
 if __name__ == "__main__":
     make_thumbnail()
+PYEOF
