@@ -3,6 +3,7 @@ import sys
 import json
 import requests
 import re
+import time
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,42 @@ def clean_text(text):
     text = re.sub(r"\([^)]*\)", "", text or "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def call_gemini_with_retry(prompt, max_retries=5):
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.6-flash:generateContent"
+    )
+
+    delay = 5
+
+    for attempt in range(1, max_retries + 1):
+        response = requests.post(
+            url,
+            params={"key": API_KEY},
+            json={
+                "contents": [
+                    {"parts": [{"text": prompt}]}
+                ]
+            },
+            timeout=120
+        )
+
+        if response.status_code in (429, 503):
+            print(f"   ⏳ Gemini meşgul (HTTP {response.status_code}), "
+                  f"{delay} sn bekleyip tekrar denenecek "
+                  f"({attempt}/{max_retries})...")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+            continue
+
+        response.raise_for_status()
+
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    raise RuntimeError("Gemini API'ye ulaşılamadı (tüm denemeler başarısız).")
 
 
 def generate(topic):
@@ -132,34 +169,7 @@ ETİKETLER:
 ...
 """
 
-    url = (
-        "https://generativelanguage.googleapis.com/"
-        "v1beta/models/gemini-3.6-flash:generateContent"
-    )
-
-    response = requests.post(
-        url,
-        params={"key": API_KEY},
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ]
-        },
-        timeout=120
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    return (
-        data["candidates"][0]
-        ["content"]["parts"][0]["text"]
-    )
+    return call_gemini_with_retry(prompt)
 
 
 def parse(text, topic):
@@ -231,7 +241,7 @@ def parse(text, topic):
 def main():
 
     print("=" * 60)
-    print("          SHORTS İÇERİK MOTORU (SABİT KONU HAVUZU)")
+    print("          SHORTS İÇERİK MOTORU")
     print("=" * 60)
     print("Konu:", TOPIC)
 
