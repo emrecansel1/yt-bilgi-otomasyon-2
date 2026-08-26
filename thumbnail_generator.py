@@ -1,4 +1,3 @@
-cat > thumbnail_generator.py << 'PYEOF'
 import os
 import re
 import random
@@ -297,4 +296,4 @@ def make_thumbnail():
 
 if __name__ == "__main__":
     make_thumbnail()
-PYEOF
+            
