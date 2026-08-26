@@ -1,3 +1,4 @@
+cat > auto_video.py << 'PYEOF'
 import os
 import subprocess
 import sys
@@ -11,6 +12,7 @@ CONTENT = os.path.join(OUT, "current_content.txt")
 VOICE = os.path.join(OUT, "current_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "current_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "current_final.mp4")
+THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 
 TOPICS = [
     "Nikola Tesla'nın en şaşırtıcı icatları ve hayatındaki bilinmeyen olaylar",
@@ -49,6 +51,38 @@ def run(cmd, name):
             f"❌ HATA: {name} (exit code {result.returncode})"
         )
 
+
+def run_optional(cmd, name):
+    """run() ile aynı, ama başarısız olursa süreci durdurmaz — sadece uyarır."""
+    print()
+    print("=" * 40)
+    print(name)
+    print("=" * 40)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True
+        )
+
+        if result.stdout:
+            print(result.stdout)
+
+        if result.stderr:
+            print(result.stderr)
+
+        if result.returncode != 0:
+            print(f"⚠️ {name} başarısız oldu (exit code {result.returncode}), devam ediliyor...")
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"⚠️ {name} çalıştırılamadı: {e}")
+        return False
+
+
 def main():
 
     topic = random.choice(TOPICS)
@@ -58,12 +92,8 @@ def main():
     print("================================")
     print("🎯 Otomatik konu:", topic)
 
-    # --------------------------------------------------
-    # 1. İÇERİK
-    # --------------------------------------------------
-
     print()
-    print("🧠 1/5 İÇERİK OLUŞTURULUYOR...")
+    print("🧠 1/6 İÇERİK OLUŞTURULUYOR...")
 
     run(
         [
@@ -77,12 +107,8 @@ def main():
     if not os.path.exists(CONTENT):
         raise SystemExit("❌ current_content.txt oluşmadı.")
 
-    # --------------------------------------------------
-    # 2. SES
-    # --------------------------------------------------
-
     print()
-    print("🎙️ 2/5 SES OLUŞTURULUYOR...")
+    print("🎙️ 2/6 SES OLUŞTURULUYOR...")
 
     run(
         [
@@ -97,12 +123,8 @@ def main():
     if not os.path.exists(VOICE):
         raise SystemExit("❌ current_voice.wav oluşmadı.")
 
-    # --------------------------------------------------
-    # 3. GÖRSELLER
-    # --------------------------------------------------
-
     print()
-    print("🖼️ 3/5 GÖRSELLER BULUNUYOR...")
+    print("🖼️ 3/6 GÖRSELLER BULUNUYOR...")
 
     run(
         [
@@ -131,12 +153,8 @@ def main():
     if not valid:
         raise SystemExit("❌ Hiç kullanılabilir görsel bulunamadı.")
 
-    # --------------------------------------------------
-    # 4. GÖRSELLİ VİDEO
-    # --------------------------------------------------
-
     print()
-    print("🎬 4/5 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
+    print("🎬 4/6 GÖRSELLİ VİDEO OLUŞTURULUYOR...")
 
     temp_script = os.path.join(BASE, "_auto_visual.py")
 
@@ -174,12 +192,8 @@ def main():
     if not os.path.exists(VIDEO_NO_AUDIO):
         raise SystemExit("❌ Görsel video oluşmadı.")
 
-    # --------------------------------------------------
-    # 5. SES + VİDEO
-    # --------------------------------------------------
-
     print()
-    print("🔊 5/5 SES VİDEOYA EKLENİYOR...")
+    print("🔊 5/6 SES VİDEOYA EKLENİYOR...")
 
     run(
         [
@@ -211,12 +225,24 @@ def main():
     print("📦 Boyut:", round(os.path.getsize(FINAL) / 1024 / 1024, 2), "MB")
     print("================================")
 
-    # --------------------------------------------------
-    # YOUTUBE'A YÜKLE
-    # --------------------------------------------------
+    print()
+    print("🖼️ THUMBNAIL OLUŞTURULUYOR...")
+
+    thumb_ok = run_optional(
+        [
+            sys.executable,
+            "thumbnail_generator.py"
+        ],
+        "THUMBNAIL MOTORU"
+    )
+
+    if thumb_ok and os.path.exists(THUMBNAIL):
+        print("✅ Thumbnail hazır:", THUMBNAIL)
+    else:
+        print("⚠️ Thumbnail oluşturulamadı, video thumbnail'siz devam edecek.")
 
     print()
-    print("📤 YOUTUBE'A YÜKLENİYOR...")
+    print("📤 6/6 YOUTUBE'A YÜKLENİYOR...")
 
     run(
         [
@@ -225,10 +251,6 @@ def main():
         ],
         "YOUTUBE YÜKLEYİCİ"
     )
-
-    # --------------------------------------------------
-    # TEMİZLİK
-    # --------------------------------------------------
 
     if os.path.exists(VIDEO_NO_AUDIO):
         os.remove(VIDEO_NO_AUDIO)
@@ -239,6 +261,7 @@ def main():
     print("================================")
     print("🎯 Konu:", topic)
     print("📁 Video:", FINAL)
+    print("🖼️ Thumbnail:", THUMBNAIL if os.path.exists(THUMBNAIL) else "yok")
     print(
         "💾 Boyut:",
         round(os.path.getsize(FINAL) / 1024 / 1024, 2),
@@ -249,3 +272,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+PYEOF
