@@ -28,7 +28,7 @@ jobs:
           set -euxo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1
+          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1 fonts-dejavu-core
 
           echo "=== Piper kuruluyor ==="
 
