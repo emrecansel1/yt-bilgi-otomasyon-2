@@ -7,7 +7,7 @@ import json
 PIPER_VOICE_PATH = os.environ.get("PIPER_VOICE_PATH", ".")
 MODEL = os.path.join(PIPER_VOICE_PATH, "tr_TR-dfki-medium.onnx")
 
-SILENCE_BETWEEN_SCENES = 0.25  # cümleler arası doğal duraklama (sn)
+SILENCE_BETWEEN_SCENES = 0.25
 
 
 def clean_text(text):
@@ -97,6 +97,25 @@ def synth_piper(piper, text, output_wav):
     )
 
 
+def trim_silence(input_wav, output_wav):
+    # Baştaki ve sondaki sessizliği kırp, gerçek konuşma süresini netleştir.
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", input_wav,
+            "-af",
+            "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,"
+            "areverse,"
+            "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,"
+            "areverse",
+            output_wav
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+
 def create_voice(text_file, output_wav):
     if not os.path.isfile(text_file):
         raise FileNotFoundError(f"Senaryo bulunamadı: {text_file}")
@@ -120,7 +139,7 @@ def create_voice(text_file, output_wav):
     if not scenes:
         scenes = [raw]
 
-    print("🎙️ Piper Türkçe ses oluşturuyor (cümle cümle)...")
+    print("🎙️ Piper Türkçe ses oluşturuyor (cümle cümle, sessizlik kırpılmış)...")
     print("🧩 Sahne sayısı:", len(scenes))
     print("🤖 Model:", MODEL)
     print("🔧 Piper:", piper)
@@ -141,22 +160,30 @@ def create_voice(text_file, output_wav):
     scene_durations = []
 
     for i, scene_text in enumerate(scenes, 1):
-        scene_wav = os.path.join(tmp_dir, f"scene_{i:03d}.wav")
+        raw_wav = os.path.join(tmp_dir, f"scene_{i:03d}_raw.wav")
+        trimmed_wav = os.path.join(tmp_dir, f"scene_{i:03d}.wav")
 
         print(f"   [{i}/{len(scenes)}] seslendiriliyor: {scene_text[:60]}")
 
-        synth_piper(piper, scene_text, scene_wav)
+        synth_piper(piper, scene_text, raw_wav)
 
-        duration = get_wav_duration(scene_wav)
+        try:
+            trim_silence(raw_wav, trimmed_wav)
+            if not os.path.isfile(trimmed_wav) or os.path.getsize(trimmed_wav) == 0:
+                raise RuntimeError("Kırpma sonucu boş dosya.")
+        except Exception as e:
+            print(f"      ⚠️ Sessizlik kırpma başarısız ({e}), ham dosya kullanılıyor.")
+            trimmed_wav = raw_wav
 
-        scene_files.append(scene_wav)
+        duration = get_wav_duration(trimmed_wav)
+
+        scene_files.append(trimmed_wav)
         scene_durations.append({
             "scene": i,
             "text": scene_text,
             "duration": round(duration, 3)
         })
 
-    # Sahneler arasına küçük sessizlik ekle (doğal duraklama)
     sample_rate, channels = get_wav_params(scene_files[0])
 
     silence_wav = os.path.join(tmp_dir, "silence.wav")
@@ -185,7 +212,6 @@ def create_voice(text_file, output_wav):
             if i < len(scene_files) - 1:
                 silence_path = os.path.abspath(silence_wav).replace("'", "'\\''")
                 f.write(f"file '{silence_path}'\n")
-                # araya giren sessizlik süresini bir önceki sahnenin süresine ekle
                 scene_durations[i]["duration"] = round(
                     scene_durations[i]["duration"] + SILENCE_BETWEEN_SCENES, 3
                 )
