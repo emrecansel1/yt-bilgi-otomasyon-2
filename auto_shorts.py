@@ -3,6 +3,7 @@ import subprocess
 import sys
 import json
 import re
+import time
 import requests
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
@@ -41,6 +42,64 @@ def save_history(history):
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 
+def is_valid_topic(topic):
+    if not topic:
+        return False
+
+    if len(topic) < 8 or len(topic) > 200:
+        return False
+
+    # Saçma/anlamsız çıktı belirtileri: çok fazla rakam, tuhaf tekrar, boşluk yokluğu
+    if not re.search(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", topic):
+        return False
+
+    word_count = len(topic.split())
+    if word_count < 2:
+        return False
+
+    return True
+
+
+def call_gemini_with_retry(prompt, max_retries=5):
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.6-flash:generateContent"
+    )
+
+    delay = 5
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.post(
+                url,
+                params={"key": GEMINI_API_KEY},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=60
+            )
+
+            if response.status_code in (429, 503):
+                print(f"   ⏳ Gemini meşgul (HTTP {response.status_code}), "
+                      f"{delay} sn bekleyip tekrar denenecek "
+                      f"({attempt}/{max_retries})...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+
+            response.raise_for_status()
+
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+        except requests.exceptions.RequestException as e:
+            print(f"   ⚠️ Gemini isteği hatası: {e}, "
+                  f"{delay} sn bekleyip tekrar denenecek "
+                  f"({attempt}/{max_retries})...")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+
+    raise RuntimeError("Gemini API'ye ulaşılamadı (tüm denemeler başarısız).")
+
+
 def generate_topic(history):
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY bulunamadı.")
@@ -52,10 +111,10 @@ Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim YouTube
 kanalı için Shorts konu bulan bir editörsün.
 
 GÖREV:
-İzleyicinin "vay be, bunu bilmiyordum" diyeceği, çarpıcı, meraklandırıcı
-TEK BİR konu öner. Konu; tarih, bilim, icatlar, keşifler, gizemli
-olaylar, insan vücudu, uzay, hayvanlar, eski uygarlıklar, teknoloji
-tarihi gibi alanlardan olabilir.
+İzleyicinin "vay be, bunu bilmiyordum" diyeceği, çarpıcı, meraklandırıcı,
+GERÇEK ve DOĞRULANABİLİR TEK BİR konu öner. Konu; tarih, bilim, icatlar,
+keşifler, gizemli olaylar, insan vücudu, uzay, hayvanlar, eski
+uygarlıklar, teknoloji tarihi gibi alanlardan olabilir.
 
 KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR ÖNERME
 (bunlara çok benzer/aynı konuları da önerme):
@@ -64,8 +123,9 @@ KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR ÖNERME
 KURALLAR:
 - Siyasi propaganda, savaş suçluları, diktatörler, hakaret veya
   kışkırtıcı içerik ÖNERME.
-- Doğrulanabilir, gerçek bir olay/bilgi olsun, uydurma olmasın.
-- Konu tek cümle/başlık halinde, kısa ve net olsun.
+- Sadece gerçek, doğrulanabilir bir olay/bilgi olsun. Uydurma,
+  anlamsız veya saçma bir şey ÜRETME.
+- Konu tek cümle/başlık halinde, kısa ve net olsun (en az 3-4 kelime).
 - Sadece konuyu yaz, başka hiçbir açıklama, numaralandırma veya
   yorum ekleme.
 
@@ -73,29 +133,9 @@ KURALLAR:
 Sadece konunun kendisini yaz, tek satır.
 """
 
-    url = (
-        "https://generativelanguage.googleapis.com/"
-        "v1beta/models/gemini-3.6-flash:generateContent"
-    )
+    raw = call_gemini_with_retry(prompt)
 
-    response = requests.post(
-        url,
-        params={"key": GEMINI_API_KEY},
-        json={
-            "contents": [
-                {"parts": [{"text": prompt}]}
-            ]
-        },
-        timeout=60
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    topic = data["candidates"][0]["content"]["parts"][0]["text"]
-
-    topic = re.sub(r"^[\-\*\d\.\)\s]+", "", topic.strip())
+    topic = re.sub(r"^[\-\*\d\.\)\s]+", "", raw.strip())
     topic = re.sub(r"\s+", " ", topic).strip()
     topic = topic.strip('"').strip()
 
@@ -129,21 +169,23 @@ def main():
 
     topic = None
 
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             candidate = generate_topic(history)
 
-            if candidate and candidate not in history:
+            if candidate and candidate not in history and is_valid_topic(candidate):
                 topic = candidate
                 break
 
-            print("   ⚠️ Tekrar konu geldi, yeniden deneniyor...")
+            print(f"   ⚠️ Geçersiz/tekrar konu geldi ({candidate!r}), "
+                  f"yeniden deneniyor...")
 
         except Exception as e:
             print("   ⚠️ Konu üretim hatası:", e)
+            time.sleep(5)
 
     if not topic:
-        raise SystemExit("❌ Yapay zeka konu üretemedi.")
+        raise SystemExit("❌ Yapay zeka geçerli bir konu üretemedi.")
 
     print("🎯 Seçilen konu:", topic)
 
