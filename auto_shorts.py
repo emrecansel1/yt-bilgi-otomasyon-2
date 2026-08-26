@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import json
+import random
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -9,12 +10,36 @@ OUT = os.path.join(BASE, "output")
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 CONTENT_JSON = os.path.join(REPO_BASE, "shorts_content.json")
+TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
 
 SCRIPT_TEXT = os.path.join(OUT, "shorts_script.txt")
 VOICE = os.path.join(OUT, "shorts_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "shorts_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "shorts_final.mp4")
 META_FILE = os.path.join(OUT, "shorts_meta.json")
+
+TOPICS = [
+    "Tuval kağıdı neden icat edildi",
+    "Nikola Tesla'nın en tuhaf icadı",
+    "Thomas Edison'ın başarısız olan icadı",
+    "Fransız kaşiflerin unutulmuş keşfi",
+    "Yazının icat edilme hikayesi",
+    "İlk fotoğraf makinesinin icadı",
+    "Antibiyotiğin tesadüfen keşfi",
+    "İlk telefonun icat edilme hikayesi",
+    "Uçağın icadından önce yapılan garip denemeler",
+    "İlk bilgisayarın icat edilme hikayesi",
+    "Buharlı makinenin icadı ve etkisi",
+    "İlk aşının keşfedilme hikayesi",
+    "Elektriğin keşfedilme süreci",
+    "İlk otomobilin icadı",
+    "Röntgenin tesadüfen keşfi",
+    "İlk saatin icat edilme hikayesi",
+    "Kağıt paranın icadı",
+    "İlk matbaa makinesinin icadı",
+    "Dinamitin icadı ve Nobel'in hikayesi",
+    "İlk buzdolabının icadı",
+]
 
 
 def run(cmd, name):
@@ -38,76 +63,30 @@ def main():
     print("================================")
 
     # --------------------------------------------------
-    # 1. TREND TARAMA
+    # 1. KONU SEÇİMİ (sabit konu havuzu)
+    # --------------------------------------------------
+
+    topic = random.choice(TOPICS)
+
+    print()
+    print("🧠 1/6 SHORTS KONUSU SEÇİLİYOR...")
+    print("🎯 Seçilen konu:", topic)
+
+    with open(TOPIC_FILE, "w", encoding="utf-8") as f:
+        f.write(topic)
+
+    # --------------------------------------------------
+    # 2. İÇERİK ÜRETİMİ
     # --------------------------------------------------
 
     print()
-    print("🔎 1/9 TREND TARANIYOR...")
+    print("✍️ 2/6 SHORTS METNİ YAZILIYOR...")
 
     run(
         [
             sys.executable,
-            os.path.join(REPO_BASE, "trend_scanner.py")
-        ],
-        "TREND TARAYICI"
-    )
-
-    # --------------------------------------------------
-    # 2. HABER TARAMA
-    # --------------------------------------------------
-
-    print()
-    print("📰 2/9 HABERLER TARANIYOR...")
-
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "news_scanner.py")
-        ],
-        "HABER TARAYICI"
-    )
-
-    # --------------------------------------------------
-    # 3. KONU SEÇİMİ
-    # --------------------------------------------------
-
-    print()
-    print("🧠 3/9 SHORTS KONUSU SEÇİLİYOR...")
-
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "shorts_brain.py")
-        ],
-        "SHORTS KONU SEÇİCİ"
-    )
-
-    # --------------------------------------------------
-    # 4. ARAŞTIRMA
-    # --------------------------------------------------
-
-    print()
-    print("🔬 4/9 KONU ARAŞTIRILIYOR...")
-
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "researcher.py")
-        ],
-        "ARAŞTIRMA MOTORU"
-    )
-
-    # --------------------------------------------------
-    # 5. İÇERİK ÜRETİMİ
-    # --------------------------------------------------
-
-    print()
-    print("✍️ 5/9 SHORTS METNİ YAZILIYOR...")
-
-    run(
-        [
-            sys.executable,
-            os.path.join(REPO_BASE, "shorts_content.py")
+            os.path.join(REPO_BASE, "shorts_content.py"),
+            topic
         ],
         "SHORTS İÇERİK MOTORU"
     )
@@ -150,11 +129,11 @@ def main():
     print("📝 Kelime sayısı:", len(script_text.split()))
 
     # --------------------------------------------------
-    # 6. SES
+    # 3. SES
     # --------------------------------------------------
 
     print()
-    print("🎙️ 6/9 SES OLUŞTURULUYOR...")
+    print("🎙️ 3/6 SES OLUŞTURULUYOR...")
 
     run(
         [
@@ -170,11 +149,11 @@ def main():
         raise SystemExit("❌ shorts_voice.wav oluşmadı.")
 
     # --------------------------------------------------
-    # 7. GÖRSELLER VE DİKEY VİDEO
+    # 4. GÖRSELLER VE DİKEY VİDEO
     # --------------------------------------------------
 
     print()
-    print("🖼️ 7/9 GÖRSELLER BULUNUYOR VE VİDEO OLUŞTURULUYOR...")
+    print("🖼️ 4/6 GÖRSELLER BULUNUYOR VE VİDEO OLUŞTURULUYOR...")
 
     run(
         [
@@ -196,11 +175,11 @@ def main():
         raise SystemExit("❌ shorts_video_no_audio.mp4 oluşmadı.")
 
     # --------------------------------------------------
-    # 8. SES + VİDEO BİRLEŞTİRME
+    # 5. SES + VİDEO BİRLEŞTİRME
     # --------------------------------------------------
 
     print()
-    print("🔊 8/9 SES VİDEOYA EKLENİYOR...")
+    print("🔊 5/6 SES VİDEOYA EKLENİYOR...")
 
     run(
         [
@@ -224,11 +203,11 @@ def main():
         raise SystemExit("❌ shorts_final.mp4 oluşmadı.")
 
     # --------------------------------------------------
-    # 9. YOUTUBE'A YÜKLE
+    # 6. YOUTUBE'A YÜKLE
     # --------------------------------------------------
 
     print()
-    print("📤 9/9 YOUTUBE SHORTS'A YÜKLENİYOR...")
+    print("📤 6/6 YOUTUBE SHORTS'A YÜKLENİYOR...")
 
     run(
         [
@@ -245,7 +224,8 @@ def main():
     print("================================")
     print("🎉 SHORTS VİDEO HAZIR")
     print("================================")
-    print("🎯 Başlık:", title)
+    print("🎯 Konu:", topic)
+    print("🎬 Başlık:", title)
     print("📁 Dosya:", FINAL)
     print(
         "💾 Boyut:",
@@ -257,3 +237,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
