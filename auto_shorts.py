@@ -2,7 +2,8 @@ import os
 import subprocess
 import sys
 import json
-import random
+import re
+import requests
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -11,6 +12,7 @@ REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 CONTENT_JSON = os.path.join(REPO_BASE, "shorts_content.json")
 TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
+TOPIC_HISTORY_FILE = os.path.join(OUT, "shorts_topic_history.json")
 
 SCRIPT_TEXT = os.path.join(OUT, "shorts_script.txt")
 VOICE = os.path.join(OUT, "shorts_voice.wav")
@@ -18,28 +20,86 @@ VIDEO_NO_AUDIO = os.path.join(OUT, "shorts_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "shorts_final.mp4")
 META_FILE = os.path.join(OUT, "shorts_meta.json")
 
-TOPICS = [
-    "Tuval kağıdı neden icat edildi",
-    "Nikola Tesla'nın en tuhaf icadı",
-    "Thomas Edison'ın başarısız olan icadı",
-    "Fransız kaşiflerin unutulmuş keşfi",
-    "Yazının icat edilme hikayesi",
-    "İlk fotoğraf makinesinin icadı",
-    "Antibiyotiğin tesadüfen keşfi",
-    "İlk telefonun icat edilme hikayesi",
-    "Uçağın icadından önce yapılan garip denemeler",
-    "İlk bilgisayarın icat edilme hikayesi",
-    "Buharlı makinenin icadı ve etkisi",
-    "İlk aşının keşfedilme hikayesi",
-    "Elektriğin keşfedilme süreci",
-    "İlk otomobilin icadı",
-    "Röntgenin tesadüfen keşfi",
-    "İlk saatin icat edilme hikayesi",
-    "Kağıt paranın icadı",
-    "İlk matbaa makinesinin icadı",
-    "Dinamitin icadı ve Nobel'in hikayesi",
-    "İlk buzdolabının icadı",
-]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+MAX_HISTORY = 60
+
+
+def load_history():
+    if os.path.exists(TOPIC_HISTORY_FILE):
+        try:
+            with open(TOPIC_HISTORY_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def save_history(history):
+    history = history[-MAX_HISTORY:]
+    with open(TOPIC_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def generate_topic(history):
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+
+    avoid_list = "\n".join(f"- {t}" for t in history) if history else "(henüz yok)"
+
+    prompt = f"""
+Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim YouTube
+kanalı için Shorts konu bulan bir editörsün.
+
+GÖREV:
+İzleyicinin "vay be, bunu bilmiyordum" diyeceği, çarpıcı, meraklandırıcı
+TEK BİR konu öner. Konu; tarih, bilim, icatlar, keşifler, gizemli
+olaylar, insan vücudu, uzay, hayvanlar, eski uygarlıklar, teknoloji
+tarihi gibi alanlardan olabilir.
+
+KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR ÖNERME
+(bunlara çok benzer/aynı konuları da önerme):
+{avoid_list}
+
+KURALLAR:
+- Siyasi propaganda, savaş suçluları, diktatörler, hakaret veya
+  kışkırtıcı içerik ÖNERME.
+- Doğrulanabilir, gerçek bir olay/bilgi olsun, uydurma olmasın.
+- Konu tek cümle/başlık halinde, kısa ve net olsun.
+- Sadece konuyu yaz, başka hiçbir açıklama, numaralandırma veya
+  yorum ekleme.
+
+ÇIKTI:
+Sadece konunun kendisini yaz, tek satır.
+"""
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.6-flash:generateContent"
+    )
+
+    response = requests.post(
+        url,
+        params={"key": GEMINI_API_KEY},
+        json={
+            "contents": [
+                {"parts": [{"text": prompt}]}
+            ]
+        },
+        timeout=60
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    topic = data["candidates"][0]["content"]["parts"][0]["text"]
+
+    topic = re.sub(r"^[\-\*\d\.\)\s]+", "", topic.strip())
+    topic = re.sub(r"\s+", " ", topic).strip()
+    topic = topic.strip('"').strip()
+
+    return topic
 
 
 def run(cmd, name):
@@ -62,11 +122,33 @@ def main():
     print("🤖 TAM OTOMATİK SHORTS SİSTEMİ")
     print("================================")
 
-    topic = random.choice(TOPICS)
-
     print()
-    print("🧠 1/6 SHORTS KONUSU SEÇİLİYOR...")
+    print("🧠 1/6 SHORTS KONUSU BULUNUYOR (YAPAY ZEKA)...")
+
+    history = load_history()
+
+    topic = None
+
+    for attempt in range(3):
+        try:
+            candidate = generate_topic(history)
+
+            if candidate and candidate not in history:
+                topic = candidate
+                break
+
+            print("   ⚠️ Tekrar konu geldi, yeniden deneniyor...")
+
+        except Exception as e:
+            print("   ⚠️ Konu üretim hatası:", e)
+
+    if not topic:
+        raise SystemExit("❌ Yapay zeka konu üretemedi.")
+
     print("🎯 Seçilen konu:", topic)
+
+    history.append(topic)
+    save_history(history)
 
     with open(TOPIC_FILE, "w", encoding="utf-8") as f:
         f.write(topic)
