@@ -2,7 +2,7 @@ name: YouTube Otomatik Video
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '20 1,5,9,13,17,21 * * *'
   workflow_dispatch:
 
 jobs:
