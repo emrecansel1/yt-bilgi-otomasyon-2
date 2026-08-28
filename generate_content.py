@@ -26,10 +26,10 @@ URL = (
 
 MAX_HISTORY = 30
 
-# 1 saatlik seslendirmeyi (~9000 kelime) az sayıda büyük bölümde
-# doldurup Gemini isteğini azaltıyoruz.
-BOLUM_SAYISI = 3
-BOLUM_BASINA_KELIME = 3000
+# 25 dakikalık seslendirmeyi (~3750 kelime) 2 bölümde doldurup
+# Gemini isteğini minimumda tutuyoruz.
+BOLUM_SAYISI = 2
+BOLUM_BASINA_KELIME = 1875
 
 METADATA_AYIRICI = "===METADATA_AYIRICI==="
 
@@ -150,23 +150,24 @@ def generate_topic_and_outline(history):
 
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim YouTube
-kanalı için 1 SAATLİK belgesel formatında uzun video hazırlayan
-bir editör VE senaristsin. Bu tek istekte HEM konuyu seçeceksin
-HEM de o konunun bölüm planını (outline) çıkaracaksın.
+kanalı için 20-25 DAKİKALIK belgesel formatında uzun video
+hazırlayan bir editör VE senaristsin. Bu tek istekte HEM konuyu
+seçeceksin HEM de o konunun bölüm planını (outline) çıkaracaksın.
 
 1. ADIM - KONU SEÇ:
-Seçtiğin konu, en az 45-60 dakikalık zengin, derinlemesine bir
-belgesel anlatımını doldurabilecek kadar GENİŞ ve DERİN olmalı.
-Tek bir küçük ilginç bilgi veya kısa bir olay YETERSİZDİR.
+Seçtiğin konu, 20-25 dakikalık orta yoğunlukta bir belgesel
+anlatımını doldurabilecek kadar zengin olmalı. Tek bir küçük
+ilginç bilgi veya kısa bir olay YETERSİZDİR, ama saatlerce
+sürecek dev bir kapsam da GEREKMEZ — odaklı, tek bir olay/kişi/
+dönem/keşfin derinlemesine anlatımı yeterli.
 
 İyi örnekler (kapsam olarak):
-- Bir tarihi kişinin tüm hayatı ve mirası (diktatör/savaş
-  suçlusu olmayan).
-- Bir antik uygarlığın yükselişi ve çöküşü.
-- Büyük bir tarihi olayın veya dönemin bütün boyutlarıyla
-  anlatımı.
-- Bir bilim dalının veya büyük keşfin baştan sona hikâyesi.
-- Çözülmemiş büyük bir gizemin tüm açılardan incelenmesi.
+- Bir tarihi kişinin hayatının en önemli dönemi veya en büyük
+  başarısı/dönüm noktası (diktatör/savaş suçlusu olmayan).
+- Bir antik uygarlığın en dikkat çekici tek bir yönü veya olayı.
+- Tek bir büyük tarihi olayın bütün boyutlarıyla anlatımı.
+- Bir bilim dalındaki tek bir büyük keşfin hikâyesi.
+- Çözülmemiş tek bir gizemin incelenmesi.
 
 KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR SEÇME
 (bunlara çok benzer/aynı konuları da seçme):
@@ -176,12 +177,10 @@ KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR SEÇME
 Bu konuyu {BOLUM_SAYISI} büyük bölümde anlatacak bir belgesel
 bölüm planı hazırla. Her bölüm yaklaşık {BOLUM_BASINA_KELIME}
 kelimelik anlatıma denk gelecek şekilde tasarlanmalı, toplamda
-~1 saatlik bir belgesel oluşturmalı.
+~20-25 dakikalık bir belgesel oluşturmalı.
 
 KURALLAR:
 - 1. bölüm çok güçlü bir açılış/merak unsuru içermeli.
-- Ortadaki bölümler konuyu derinlemesine, kronolojik veya
-  mantıklı bir sırayla işlemeli.
 - Son bölüm konunun insanlık/tarih/bilim açısından önemiyle
   kapanmalı.
 - Bölümler birbirinin devamı olmalı, konu tekrarı olmamalı.
@@ -195,7 +194,6 @@ ekleme):
 KONU: <seçtiğin konu, tek satır>
 BÖLÜM 1: <kısa başlık> - <bu bölümde anlatılacakların 1-2 cümlelik özeti>
 BÖLÜM 2: <kısa başlık> - <özet>
-BÖLÜM 3: <kısa başlık> - <özet>
 """
 
     raw = call_gemini_with_retry(prompt)
@@ -238,8 +236,8 @@ BU SON BÖLÜM OLDUĞU İÇİN, bölüm metnini yazdıktan SONRA, tam
 olarak şu satırı yaz:
 {METADATA_AYIRICI}
 
-Ardından bu 1 saatlik belgesel video için YouTube metadata'sı
-ekle, tam olarak şu formatta:
+Ardından bu 20-25 dakikalık belgesel video için YouTube
+metadata'sı ekle, tam olarak şu formatta:
 
 BAŞLIK:
 YouTube için merak uyandırıcı ama yanıltıcı olmayan başlık.
@@ -299,7 +297,7 @@ def default_metadata(topic):
 
 def main():
     print("================================")
-    print("🎬 BÖLÜMLÜ BELGESEL SENARYO MOTORU (AZALTILMIŞ İSTEK)")
+    print("🎬 BÖLÜMLÜ BELGESEL SENARYO MOTORU (25 DK, AZALTILMIŞ İSTEK)")
     print("================================")
     print(f"Hedef: {BOLUM_SAYISI} bölüm x ~{BOLUM_BASINA_KELIME} kelime "
           f"(~{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime toplam)")
