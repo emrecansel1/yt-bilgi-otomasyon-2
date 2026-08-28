@@ -18,15 +18,12 @@ MAX_USED = 5000
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Metni bu kadar kelimelik bloklara bölüp her blok için ayrı
-# görsel/video sahnesi arıyoruz. 1 saatlik (~9000 kelime) bir
-# senaryoda bu, ~40-45 sahne demek.
 WORDS_PER_SCENE = 220
 
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
-session.headers.update({"User-Agent": "YTBilgiUzun/7.0"})
+session.headers.update({"User-Agent": "YTBilgiUzun/8.0"})
 
 GENERIC_FALLBACK_QUERIES_EN = [
     "old vintage photo history",
@@ -56,10 +53,7 @@ def load_used_visuals():
 def save_used_visuals(used_urls, used_hashes):
     with open(USED_VISUALS_FILE, "w", encoding="utf-8") as f:
         json.dump(
-            {
-                "urls": list(used_urls)[-MAX_USED:],
-                "hashes": list(used_hashes)[-MAX_USED:]
-            },
+            {"urls": list(used_urls)[-MAX_USED:], "hashes": list(used_hashes)[-MAX_USED:]},
             f, ensure_ascii=False, indent=2
         )
 
@@ -83,8 +77,6 @@ def get_topic():
             if t:
                 return t
 
-    # Eski/yedek yöntem: konu dosyası yoksa metnin ilk anlamlı
-    # cümlesinden bir konu tahmini çıkar.
     with open(CONTENT, "r", encoding="utf-8") as f:
         text = f.read()
 
@@ -138,7 +130,7 @@ def chunk_into_scenes(text, words_per_scene=WORDS_PER_SCENE):
     return [s for s in scenes if len(s) > 20]
 
 
-def call_gemini_with_retry(prompt, max_retries=3):
+def call_gemini_with_retry(prompt, max_retries=3, timeout=60):
     if not GEMINI_API_KEY:
         return None
 
@@ -155,7 +147,7 @@ def call_gemini_with_retry(prompt, max_retries=3):
                 url,
                 params={"key": GEMINI_API_KEY},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=30
+                timeout=timeout
             )
 
             if response.status_code in (429, 503):
@@ -174,35 +166,61 @@ def call_gemini_with_retry(prompt, max_retries=3):
     return None
 
 
-def generate_visual_query(scene, topic):
+def generate_visual_queries_batch(scenes, topic):
+    numbered = "\n".join(f"{i}: {s[:180]}" for i, s in enumerate(scenes, 1))
+
     prompt = f"""
 Konu: {topic}
-Belgesel metni parçası (Türkçe): {scene[:500]}
 
-Bu metin parçasının anlattığı olayı/nesneyi/yeri/kişiyi stok
-video/fotoğraf sitesinde aratmak için 3-6 kelimelik SOMUT,
-GÖRSEL OLARAK ARANABİLİR bir İngilizce arama sorgusu yaz.
+Aşağıda numaralandırılmış {len(scenes)} adet Türkçe belgesel
+metni parçası var. Her parça için, o parçanın anlattığı
+olayı/nesneyi/yeri/kişiyi/dönemi stok video/fotoğraf sitesinde
+aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
+İngilizce arama sorgusu yaz.
+
+METİN PARÇALARI:
+{numbered}
 
 KURALLAR:
 - Soyut kavram yazma.
 - Metinde geçen somut özel isim, nesne, yer, olay, dönem varsa
   onu kullan.
-- Sadece sorguyu yaz, başka hiçbir açıklama ekleme.
 - Tırnak işareti kullanma.
+
+ÇIKTI FORMATI (tam olarak bunu kullan, başka hiçbir şey yazma):
+1: <sorgu>
+2: <sorgu>
+...
+{len(scenes)}: <sorgu>
 """
 
-    raw = call_gemini_with_retry(prompt)
+    raw = call_gemini_with_retry(prompt, max_retries=3, timeout=90)
 
     if not raw:
-        return None
+        return [None] * len(scenes)
 
-    query = raw.strip().strip('"').strip()
-    query = " ".join(query.split())
+    results = [None] * len(scenes)
 
-    if not query or len(query) < 3:
-        return None
+    for line in raw.strip().splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
 
-    return query[:180]
+        num_part, query_part = line.split(":", 1)
+        num_part = num_part.strip()
+
+        if not num_part.isdigit():
+            continue
+
+        idx = int(num_part)
+
+        if 1 <= idx <= len(scenes):
+            query = query_part.strip().strip('"').strip()
+            query = " ".join(query.split())
+            if query and len(query) >= 3:
+                results[idx - 1] = query[:180]
+
+    return results
 
 
 def make_fallback_query(topic, scene):
@@ -211,39 +229,28 @@ def make_fallback_query(topic, scene):
     return en[:180]
 
 
-# ---------------- PEXELS ----------------
-
 def pexels_video_search(query):
     key = os.environ.get("PEXELS_API_KEY")
     if not key:
         return []
-
     url = "https://api.pexels.com/videos/search"
     headers = {"Authorization": key}
     params = {"query": query, "per_page": 15, "orientation": "landscape"}
-
     try:
         r = session.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
-
         results = []
         for video in data.get("videos", []):
             files = video.get("video_files", [])
-            landscape_files = [
-                f for f in files
-                if (f.get("width") or 0) > (f.get("height") or 0)
-            ]
+            landscape_files = [f for f in files if (f.get("width") or 0) > (f.get("height") or 0)]
             candidates = landscape_files if landscape_files else files
-            candidates = sorted(
-                candidates, key=lambda f: abs((f.get("width") or 0) - 1280)
-            )
+            candidates = sorted(candidates, key=lambda f: abs((f.get("width") or 0) - 1280))
             if candidates:
                 link = candidates[0].get("link")
                 if link:
                     results.append(link)
         return results
-
     except Exception as e:
         print("      Pexels video hata:", e)
         return []
@@ -253,16 +260,13 @@ def pexels_search(query):
     key = os.environ.get("PEXELS_API_KEY")
     if not key:
         return []
-
     url = "https://api.pexels.com/v1/search"
     headers = {"Authorization": key}
     params = {"query": query, "per_page": 30, "orientation": "landscape"}
-
     try:
         r = session.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
-
         results = []
         for photo in data.get("photos", []):
             src = photo.get("src", {})
@@ -270,40 +274,28 @@ def pexels_search(query):
             if image:
                 results.append(image)
         return results
-
     except Exception as e:
         print("      Pexels hata:", e)
         return []
 
 
-# ---------------- PIXABAY ----------------
-
 def pixabay_video_search(query):
     key = os.environ.get("PIXABAY_API_KEY")
     if not key:
         return []
-
     url = "https://pixabay.com/api/videos/"
     params = {"key": key, "q": query, "per_page": 20, "safesearch": "true"}
-
     try:
         r = session.get(url, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
-
         results = []
         for hit in data.get("hits", []):
             videos = hit.get("videos", {})
-            candidate = (
-                videos.get("large")
-                or videos.get("medium")
-                or videos.get("small")
-                or videos.get("tiny")
-            )
+            candidate = videos.get("large") or videos.get("medium") or videos.get("small") or videos.get("tiny")
             if candidate and candidate.get("url"):
                 results.append(candidate["url"])
         return results
-
     except Exception as e:
         print("      Pixabay video hata:", e)
         return []
@@ -313,45 +305,30 @@ def pixabay_search(query):
     key = os.environ.get("PIXABAY_API_KEY")
     if not key:
         return []
-
     url = "https://pixabay.com/api/"
-    params = {
-        "key": key, "q": query, "image_type": "photo",
-        "orientation": "horizontal", "per_page": 30, "safesearch": "true"
-    }
-
+    params = {"key": key, "q": query, "image_type": "photo", "orientation": "horizontal", "per_page": 30, "safesearch": "true"}
     try:
         r = session.get(url, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
-
         results = []
         for hit in data.get("hits", []):
             image = hit.get("largeImageURL") or hit.get("webformatURL")
             if image:
                 results.append(image)
         return results
-
     except Exception as e:
         print("      Pixabay foto hata:", e)
         return []
 
 
-# ---------------- WIKIMEDIA ----------------
-
 def wikimedia_search(query):
     url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query", "format": "json", "generator": "search",
-        "gsrsearch": query, "gsrnamespace": 6, "gsrlimit": 50,
-        "prop": "imageinfo", "iiprop": "url|mime"
-    }
-
+    params = {"action": "query", "format": "json", "generator": "search", "gsrsearch": query, "gsrnamespace": 6, "gsrlimit": 50, "prop": "imageinfo", "iiprop": "url|mime"}
     try:
         r = session.get(url, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
-
         results = []
         pages = data.get("query", {}).get("pages", {})
         for page in pages.values():
@@ -364,13 +341,10 @@ def wikimedia_search(query):
             if url2 and mime.startswith("image/"):
                 results.append(url2)
         return results
-
     except Exception as e:
         print("      Wikimedia hata:", e)
         return []
 
-
-# ---------------- İNDİRME ----------------
 
 def download_image(url, path):
     try:
@@ -440,22 +414,17 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
     for source_name, search, query, kind in sources:
         if not query:
             continue
-
         print("   🔎", source_name, "-", query[:60])
         urls = search(query)
-
         for url in urls:
             if not url or url in used_urls:
                 continue
-
             ext = "mp4" if kind == "video" else "jpg"
             filename = f"visual_{success + 1:03d}.{ext}"
             path = os.path.join(visuals_dir, filename)
-
             ok = download_video(url, path) if kind == "video" else download_image(url, path)
             if not ok:
                 continue
-
             h = file_hash(path)
             if h in used_hashes:
                 try:
@@ -463,15 +432,13 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
                 except:
                     pass
                 continue
-
             return path, source_name, url, h, kind
-
     return None, None, None, None, None
 
 
 def main():
     print("================================")
-    print("🧠 UZUN VİDEO GÖRSEL/VİDEO MOTORU")
+    print("🧠 UZUN VİDEO GÖRSEL/VİDEO MOTORU (TOPLU AKILLI SORGU)")
     print("================================")
 
     topic = get_topic()
@@ -490,6 +457,11 @@ def main():
             except:
                 pass
 
+    print("🧠 Tüm sahneler için akıllı sorgular TEK istekte alınıyor...")
+    smart_queries = generate_visual_queries_batch(scenes, topic)
+    print("✅ Akıllı sorgu üretildi:", sum(1 for q in smart_queries if q), "/", len(scenes))
+    print()
+
     manifest = []
     used_urls, used_hashes = load_used_visuals()
     success = 0
@@ -500,7 +472,7 @@ def main():
         print(f"[{i}/{len(scenes)}]")
         print("🎬 SAHNE:", scene[:100])
 
-        smart_query = generate_visual_query(scene, topic)
+        smart_query = smart_queries[i - 1]
         fallback_query = make_fallback_query(topic, scene)
 
         if smart_query:
@@ -524,18 +496,14 @@ def main():
         sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query, "image"))
         sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query, "image"))
 
-        selected, selected_source, url, h, kind = try_sources(
-            sources, used_urls, used_hashes, success, VISUALS
-        )
+        selected, selected_source, url, h, kind = try_sources(sources, used_urls, used_hashes, success, VISUALS)
 
         if not selected:
             generic_sources = []
             for q in GENERIC_FALLBACK_QUERIES_EN:
                 generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image"))
                 generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image"))
-            selected, selected_source, url, h, kind = try_sources(
-                generic_sources, used_urls, used_hashes, success, VISUALS
-            )
+            selected, selected_source, url, h, kind = try_sources(generic_sources, used_urls, used_hashes, success, VISUALS)
 
         if not selected and last_good_path:
             selected = last_good_path
