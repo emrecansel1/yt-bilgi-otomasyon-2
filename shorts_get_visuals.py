@@ -127,15 +127,14 @@ def generate_visual_query(scene, topic):
     """
     Cümlenin ham/kelimesi kelimesine çevirisi yerine, Gemini'den bu cümlenin
     GÖRSEL OLARAK neyi somut şekilde gösterebileceğini kısa İngilizce anahtar
-    kelimeyle isteriz. Böylece "Dünya Titanik'i ararken biz nükleer füzelerin
-    peşindeydik" gibi bir cümle, alakasız bir stok fotoğraf yerine gerçekten
-    "nuclear submarine cold war" gibi somut bir sorguya dönüşür.
+    kelimeyle isteriz. Böylece alakasız stok görsel/video gelme ihtimali
+    büyük ölçüde azalır.
     """
     prompt = f"""
 Konu: {topic}
 Cümle (Türkçe): {scene}
 
-Bu cümlenin anlattığı olayı/nesneyi/yeri stok fotoğraf sitesinde
+Bu cümlenin anlattığı olayı/nesneyi/yeri stok video/fotoğraf sitesinde
 aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
 İngilizce arama sorgusu yaz.
 
@@ -171,6 +170,58 @@ def make_queries(scene, topic):
     topic_en = f"{topic[:100]} history photo" if topic else ""
 
     return tr[:180], en[:180], topic_en[:180]
+
+
+def pexels_video_search(query):
+    key = os.environ.get("PEXELS_API_KEY")
+
+    if not key:
+        return []
+
+    url = "https://api.pexels.com/videos/search"
+
+    headers = {"Authorization": key}
+
+    params = {
+        "query": query,
+        "per_page": 15,
+        "orientation": "portrait"
+    }
+
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        results = []
+
+        for video in data.get("videos", []):
+            files = video.get("video_files", [])
+
+            # Dikey (9:16) dosyaları tercih et
+            portrait_files = [
+                f for f in files
+                if (f.get("height") or 0) > (f.get("width") or 0)
+            ]
+
+            candidates = portrait_files if portrait_files else files
+
+            # Dosya boyutunu makul tutmak için ~720 genişliğe en yakın olanı seç
+            candidates = sorted(
+                candidates,
+                key=lambda f: abs((f.get("width") or 0) - 720)
+            )
+
+            if candidates:
+                link = candidates[0].get("link")
+                if link:
+                    results.append(link)
+
+        return results
+
+    except Exception as e:
+        print("      Pexels video hata:", e)
+        return []
 
 
 def pexels_search(query):
@@ -293,7 +344,40 @@ def download_image(url, path):
         return False
 
 
-def image_hash(path):
+def download_video(url, path):
+    try:
+        r = session.get(url, timeout=60, stream=True)
+        r.raise_for_status()
+
+        ctype = r.headers.get("content-type", "").lower()
+
+        if not ctype.startswith("video/"):
+            return False
+
+        with open(path, "wb") as f:
+            for chunk in r.iter_content(65536):
+                if chunk:
+                    f.write(chunk)
+
+        if not os.path.exists(path):
+            return False
+
+        if os.path.getsize(path) < 200000:
+            os.remove(path)
+            return False
+
+        return True
+
+    except Exception:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except:
+            pass
+        return False
+
+
+def file_hash(path):
     try:
         h = hashlib.sha256()
 
@@ -311,7 +395,11 @@ def image_hash(path):
 
 
 def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
-    for source_name, search, query in sources:
+    """
+    sources: (source_name, search_fn, query, kind) listesi.
+    kind: "video" veya "image"
+    """
+    for source_name, search, query, kind in sources:
         if not query:
             continue
 
@@ -323,13 +411,20 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
             if not url or url in used_urls:
                 continue
 
-            filename = f"shorts_visual_{success + 1:03d}.jpg"
+            ext = "mp4" if kind == "video" else "jpg"
+            filename = f"shorts_visual_{success + 1:03d}.{ext}"
             path = os.path.join(visuals_dir, filename)
 
-            if not download_image(url, path):
+            ok = (
+                download_video(url, path)
+                if kind == "video"
+                else download_image(url, path)
+            )
+
+            if not ok:
                 continue
 
-            h = image_hash(path)
+            h = file_hash(path)
 
             if h in used_hashes:
                 try:
@@ -338,14 +433,14 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
                     pass
                 continue
 
-            return path, source_name, url, h
+            return path, source_name, url, h, kind
 
-    return None, None, None, None
+    return None, None, None, None, None
 
 
 def main():
     print("================================")
-    print("🧠 SHORTS GÖRSEL MOTORU (HER CÜMLE FARKLI GÖRSEL)")
+    print("🧠 SHORTS GÖRSEL/VİDEO MOTORU (HER CÜMLE FARKLI SAHNE)")
     print("================================")
 
     topic = get_topic()
@@ -370,6 +465,7 @@ def main():
 
     success = 0
     last_good_path = None
+    last_good_kind = "image"
 
     for i, scene in enumerate(scenes, 1):
 
@@ -378,58 +474,66 @@ def main():
         print(f"[{i}/{len(scenes)}]")
         print("🎬 CÜMLE:", scene[:100])
 
-        # Öncelik: Gemini'den gelen somut, akıllı görsel sorgusu
         smart_query = generate_visual_query(scene, topic)
 
         if smart_query:
             print("   🧠 Akıllı sorgu:", smart_query)
 
-        # 1. Öncelik: akıllı sorgu (varsa), yoksa ham cümle çevirisi
+        # 1. Öncelik: VİDEO klip (akıllı sorgu, sonra ham cümle çevirisi)
         sources = []
 
         if smart_query:
-            sources.append(("Pexels (akıllı sorgu)", pexels_search, smart_query))
-            sources.append(("Wikimedia (akıllı sorgu)", wikimedia_search, smart_query))
+            sources.append(("Pexels Video (akıllı sorgu)", pexels_video_search, smart_query, "video"))
 
-        sources.append(("Pexels (cümle)", pexels_search, en_fallback))
-        sources.append(("Wikimedia (cümle EN)", wikimedia_search, en_fallback))
-        sources.append(("Wikimedia (cümle TR)", wikimedia_search, tr))
+        sources.append(("Pexels Video (cümle)", pexels_video_search, en_fallback, "video"))
 
-        selected, selected_source, url, h = try_sources(
+        # 2. Video bulunamazsa: FOTOĞRAF (akıllı sorgu, sonra ham cümle çevirisi)
+        if smart_query:
+            sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query, "image"))
+            sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query, "image"))
+
+        sources.append(("Pexels Foto (cümle)", pexels_search, en_fallback, "image"))
+        sources.append(("Wikimedia Foto (cümle EN)", wikimedia_search, en_fallback, "image"))
+        sources.append(("Wikimedia Foto (cümle TR)", wikimedia_search, tr, "image"))
+
+        selected, selected_source, url, h, kind = try_sources(
             sources, used_urls, used_hashes, success, VISUALS
         )
 
-        # 2. Bulunamazsa: konunun genel haliyle arama
+        # 3. Bulunamazsa: konunun genel haliyle video, sonra foto
         if not selected and topic_en:
             sources2 = [
-                ("Pexels (konu geneli)", pexels_search, topic_en),
-                ("Wikimedia (konu geneli)", wikimedia_search, topic_en),
+                ("Pexels Video (konu geneli)", pexels_video_search, topic_en, "video"),
+                ("Pexels Foto (konu geneli)", pexels_search, topic_en, "image"),
+                ("Wikimedia Foto (konu geneli)", wikimedia_search, topic_en, "image"),
             ]
-            selected, selected_source, url, h = try_sources(
+            selected, selected_source, url, h, kind = try_sources(
                 sources2, used_urls, used_hashes, success, VISUALS
             )
 
-        # 3. Hâlâ bulunamazsa: rastgele genel görsel havuzundan dene
+        # 4. Hâlâ bulunamazsa: rastgele genel fotoğraf havuzundan dene
         if not selected:
             generic_sources = [
-                ("Pexels (genel havuz)", pexels_search, q)
+                ("Pexels Foto (genel havuz)", pexels_search, q, "image")
                 for q in GENERIC_FALLBACK_QUERIES_EN
             ]
-            selected, selected_source, url, h = try_sources(
+            selected, selected_source, url, h, kind = try_sources(
                 generic_sources, used_urls, used_hashes, success, VISUALS
             )
 
-        # 4. Son çare: bir önceki görseli tekrar kullan (nadiren olmalı)
+        # 5. Son çare: bir önceki sahneyi tekrar kullan (nadiren olmalı)
         if not selected and last_good_path:
             selected = last_good_path
-            selected_source = "Tekrar kullanılan görsel (hiçbir kaynak bulunamadı)"
-            print("   ♻️ Hiçbir yeni görsel bulunamadı, bir önceki görsel kullanılıyor.")
+            kind = last_good_kind
+            selected_source = "Tekrar kullanılan sahne (hiçbir kaynak bulunamadı)"
+            print("   ♻️ Hiçbir yeni içerik bulunamadı, bir önceki sahne kullanılıyor.")
         elif selected:
             used_urls.add(url)
             if h:
                 used_hashes.add(h)
             success += 1
             last_good_path = selected
+            last_good_kind = kind
 
         manifest.append({
             "scene": i,
@@ -438,41 +542,45 @@ def main():
             "query_tr": tr,
             "query_en": en_fallback,
             "file": selected,
+            "type": kind or "image",
             "source": selected_source or "YOK"
         })
 
         if selected:
-            print(f"   ✅ {selected_source}")
+            print(f"   ✅ [{kind}] {selected_source}")
         else:
-            print("   ⚠️ Hiç görsel bulunamadı.")
+            print("   ⚠️ Hiç içerik bulunamadı.")
 
         print()
         time.sleep(0.2)
 
-    # İlk sahne(ler)de hiç görsel bulunamadıysa, sonradan bulunan ilk görselle geriye doldur
     fallback = None
+    fallback_kind = "image"
     for item in manifest:
         if item["file"]:
             fallback = item["file"]
+            fallback_kind = item["type"]
             break
 
     for item in manifest:
         if not item["file"] and fallback:
             item["file"] = fallback
-            item["source"] = "Geriye doğru doldurulan görsel"
+            item["type"] = fallback_kind
+            item["source"] = "Geriye doğru doldurulan sahne"
 
     with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    # Kalıcı görsel geçmişini bir sonraki run için repo'ya kaydet
     save_used_visuals(used_urls, used_hashes)
 
+    video_count = sum(1 for m in manifest if m["type"] == "video")
+
     print("================================")
-    print("✅ SHORTS GÖRSEL ARAMA BİTTİ")
+    print("✅ SHORTS GÖRSEL/VİDEO ARAMA BİTTİ")
     print("================================")
-    print(f"Benzersiz görsel: {success} / {len(scenes)}")
-    print(f"Toplam manifest kaydı: {len(manifest)} (sahne sayısıyla birebir aynı)")
-    print(f"Kalıcı görsel geçmişi: {len(used_urls)} url / {len(used_hashes)} hash")
+    print(f"Benzersiz içerik: {success} / {len(scenes)}")
+    print(f"Video sahne: {video_count} / {len(manifest)}")
+    print(f"Kalıcı geçmiş: {len(used_urls)} url / {len(used_hashes)} hash")
     print("Manifest:", MANIFEST)
 
 
