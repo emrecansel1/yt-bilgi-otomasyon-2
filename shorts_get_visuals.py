@@ -15,6 +15,8 @@ REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 USED_VISUALS_FILE = os.path.join(REPO_BASE, "shorts_used_visuals.json")
 MAX_USED = 3000
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
@@ -82,6 +84,83 @@ def get_scenes():
     scenes = [item["text"] for item in data]
 
     return scenes
+
+
+def call_gemini_with_retry(prompt, max_retries=3):
+    if not GEMINI_API_KEY:
+        return None
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.6-flash:generateContent"
+    )
+
+    delay = 3
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = session.post(
+                url,
+                params={"key": GEMINI_API_KEY},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=30
+            )
+
+            if response.status_code in (429, 503):
+                time.sleep(delay)
+                delay = min(delay * 2, 20)
+                continue
+
+            response.raise_for_status()
+
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+        except Exception:
+            time.sleep(delay)
+            delay = min(delay * 2, 20)
+
+    return None
+
+
+def generate_visual_query(scene, topic):
+    """
+    Cümlenin ham/kelimesi kelimesine çevirisi yerine, Gemini'den bu cümlenin
+    GÖRSEL OLARAK neyi somut şekilde gösterebileceğini kısa İngilizce anahtar
+    kelimeyle isteriz. Böylece "Dünya Titanik'i ararken biz nükleer füzelerin
+    peşindeydik" gibi bir cümle, alakasız bir stok fotoğraf yerine gerçekten
+    "nuclear submarine cold war" gibi somut bir sorguya dönüşür.
+    """
+    prompt = f"""
+Konu: {topic}
+Cümle (Türkçe): {scene}
+
+Bu cümlenin anlattığı olayı/nesneyi/yeri stok fotoğraf sitesinde
+aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
+İngilizce arama sorgusu yaz.
+
+KURALLAR:
+- Soyut kavram yazma (örn. "mystery", "secret" gibi tek başına
+  soyut kelimeler kullanma).
+- Cümlede geçen somut özel isim, nesne, yer, olay varsa onu
+  kullan (örn. "Titanic wreck submarine", "nuclear missile
+  cold war submarine", "ancient Egyptian artifact").
+- Sadece sorguyu yaz, başka hiçbir açıklama ekleme.
+- Tırnak işareti kullanma.
+"""
+
+    raw = call_gemini_with_retry(prompt)
+
+    if not raw:
+        return None
+
+    query = raw.strip().strip('"').strip()
+    query = " ".join(query.split())
+
+    if not query or len(query) < 3:
+        return None
+
+    return query[:180]
 
 
 def make_queries(scene, topic):
@@ -236,7 +315,7 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
         if not query:
             continue
 
-        print("   🔎", source_name, "-", query[:50])
+        print("   🔎", source_name, "-", query[:60])
 
         urls = search(query)
 
@@ -294,17 +373,27 @@ def main():
 
     for i, scene in enumerate(scenes, 1):
 
-        tr, en, topic_en = make_queries(scene, topic)
+        tr, en_fallback, topic_en = make_queries(scene, topic)
 
         print(f"[{i}/{len(scenes)}]")
         print("🎬 CÜMLE:", scene[:100])
 
-        # 1. Öncelik: cümleye özel arama
-        sources = [
-            ("Pexels (cümle)", pexels_search, en),
-            ("Wikimedia (cümle EN)", wikimedia_search, en),
-            ("Wikimedia (cümle TR)", wikimedia_search, tr),
-        ]
+        # Öncelik: Gemini'den gelen somut, akıllı görsel sorgusu
+        smart_query = generate_visual_query(scene, topic)
+
+        if smart_query:
+            print("   🧠 Akıllı sorgu:", smart_query)
+
+        # 1. Öncelik: akıllı sorgu (varsa), yoksa ham cümle çevirisi
+        sources = []
+
+        if smart_query:
+            sources.append(("Pexels (akıllı sorgu)", pexels_search, smart_query))
+            sources.append(("Wikimedia (akıllı sorgu)", wikimedia_search, smart_query))
+
+        sources.append(("Pexels (cümle)", pexels_search, en_fallback))
+        sources.append(("Wikimedia (cümle EN)", wikimedia_search, en_fallback))
+        sources.append(("Wikimedia (cümle TR)", wikimedia_search, tr))
 
         selected, selected_source, url, h = try_sources(
             sources, used_urls, used_hashes, success, VISUALS
@@ -345,8 +434,9 @@ def main():
         manifest.append({
             "scene": i,
             "scene_text": scene,
+            "smart_query": smart_query,
             "query_tr": tr,
-            "query_en": en,
+            "query_en": en_fallback,
             "file": selected,
             "source": selected_source or "YOK"
         })
