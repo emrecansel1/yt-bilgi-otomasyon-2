@@ -9,623 +9,591 @@ BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 VISUALS = os.path.join(OUT, "visuals")
 CONTENT = os.path.join(OUT, "current_content.txt")
+TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
 MANIFEST = os.path.join(OUT, "visual_manifest.json")
+
+REPO_BASE = os.path.dirname(os.path.abspath(__file__))
+USED_VISUALS_FILE = os.path.join(REPO_BASE, "video_used_visuals.json")
+MAX_USED = 5000
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Metni bu kadar kelimelik bloklara bölüp her blok için ayrı
+# görsel/video sahnesi arıyoruz. 1 saatlik (~9000 kelime) bir
+# senaryoda bu, ~40-45 sahne demek.
+WORDS_PER_SCENE = 220
 
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
-session.headers.update({
-    "User-Agent": "YTBilgiUzun/6.0"
-})
+session.headers.update({"User-Agent": "YTBilgiUzun/7.0"})
+
+GENERIC_FALLBACK_QUERIES_EN = [
+    "old vintage photo history",
+    "ancient artifact museum",
+    "historical document archive",
+    "black and white history photo",
+    "science laboratory vintage",
+    "old map exploration",
+    "antique object closeup",
+    "historic building architecture",
+    "dramatic sky abstract",
+    "old book library",
+]
+
+
+def load_used_visuals():
+    if os.path.exists(USED_VISUALS_FILE):
+        try:
+            with open(USED_VISUALS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data.get("urls", [])), set(data.get("hashes", []))
+        except Exception:
+            return set(), set()
+    return set(), set()
+
+
+def save_used_visuals(used_urls, used_hashes):
+    with open(USED_VISUALS_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "urls": list(used_urls)[-MAX_USED:],
+                "hashes": list(used_hashes)[-MAX_USED:]
+            },
+            f, ensure_ascii=False, indent=2
+        )
 
 
 def clean_text(text):
     text = re.sub(r"===.*?===", " ", text)
     text = re.sub(r"\[\s*\d+:\d+\s*-\s*\d+:\d+\s*\]", " ", text)
-
     text = re.sub(
         r"\([^)]*(ses efekti|geçiş müziği|müzik|ambiyans|efekt)[^)]*\)",
-        " ",
-        text,
-        flags=re.I
+        " ", text, flags=re.I
     )
-
-    text = re.sub(
-        r"^\s*(DIŞ SES|ANLATICI|SES)\s*[:\-]\s*",
-        "",
-        text,
-        flags=re.I
-    )
-
+    text = re.sub(r"^\s*(DIŞ SES|ANLATICI|SES)\s*[:\-]\s*", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text)
-
     return text.strip()
 
 
 def get_topic():
+    if os.path.exists(TOPIC_FILE):
+        with open(TOPIC_FILE, encoding="utf-8") as f:
+            t = f.read().strip()
+            if t:
+                return t
 
+    # Eski/yedek yöntem: konu dosyası yoksa metnin ilk anlamlı
+    # cümlesinden bir konu tahmini çıkar.
     with open(CONTENT, "r", encoding="utf-8") as f:
         text = f.read()
 
-    # METADATA bölümünü görsel sahnelerinden çıkar.
-    # Sadece gerçek seslendirme metni görsel aramasına gitsin.
     if "=== SESLENDİRME METNİ ===" in text:
         text = text.split("=== SESLENDİRME METNİ ===", 1)[1]
-
     if "=== METADATA ===" in text:
         text = text.split("=== METADATA ===", 1)[0]
 
-    text = text.strip()
-
-    lines = [
-        clean_text(x)
-        for x in text.splitlines()
-    ]
-
-    lines = [
-        x for x in lines
-        if len(x) > 20
-    ]
-
-    for line in lines:
-
-        low = line.lower()
-
-        if any(x in low for x in [
-            "ses efekti",
-            "geçiş müziği",
-            "müzik:",
-            "ambiyans"
-        ]):
-            continue
-
+    for line in [clean_text(x) for x in text.splitlines()]:
         if len(line) >= 20:
             return line[:150]
 
     return "tarih bilim"
 
 
-def get_scenes(text):
+def get_narration_text():
+    with open(CONTENT, "r", encoding="utf-8") as f:
+        text = f.read()
 
-    blocks = re.split(
-        r"\n\s*\n",
-        text
-    )
+    if "=== SESLENDİRME METNİ ===" in text:
+        text = text.split("=== SESLENDİRME METNİ ===", 1)[1]
+    if "=== METADATA ===" in text:
+        text = text.split("=== METADATA ===", 1)[0]
+
+    return clean_text(text)
+
+
+def chunk_into_scenes(text, words_per_scene=WORDS_PER_SCENE):
+    sentences = re.split(r"(?<=[.!?])\s+", text)
 
     scenes = []
+    current = []
+    current_words = 0
 
-    for block in blocks:
-
-        block = clean_text(block)
-
-        if len(block) < 50:
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
             continue
 
-        if block.lower() in [
-            "senaryo",
-            "giriş",
-            "bölüm",
-            "sonuç"
-        ]:
-            continue
+        current.append(sentence)
+        current_words += len(sentence.split())
 
-        scenes.append(block)
+        if current_words >= words_per_scene:
+            scenes.append(" ".join(current))
+            current = []
+            current_words = 0
 
-    if len(scenes) < 10:
+    if current:
+        scenes.append(" ".join(current))
 
-        sentences = re.split(
-            r"(?<=[.!?])\s+",
-            clean_text(text)
-        )
-
-        scenes = [
-            s.strip()
-            for s in sentences
-            if len(s.strip()) >= 50
-        ]
-
-    return scenes
+    return [s for s in scenes if len(s) > 20]
 
 
-def clean_scene(scene):
+def call_gemini_with_retry(prompt, max_retries=3):
+    if not GEMINI_API_KEY:
+        return None
 
-    scene = clean_text(scene)
-
-    scene = re.sub(
-        r"^(sahne|scene)\s*\d+\s*[:\-]\s*",
-        "",
-        scene,
-        flags=re.I
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.6-flash:generateContent"
     )
 
-    return scene.strip()
+    delay = 3
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = session.post(
+                url,
+                params={"key": GEMINI_API_KEY},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=30
+            )
+
+            if response.status_code in (429, 503):
+                time.sleep(delay)
+                delay = min(delay * 2, 20)
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+        except Exception:
+            time.sleep(delay)
+            delay = min(delay * 2, 20)
+
+    return None
 
 
-def make_queries(topic, scene):
+def generate_visual_query(scene, topic):
+    prompt = f"""
+Konu: {topic}
+Belgesel metni parçası (Türkçe): {scene[:500]}
 
-    scene = clean_scene(scene)
+Bu metin parçasının anlattığı olayı/nesneyi/yeri/kişiyi stok
+video/fotoğraf sitesinde aratmak için 3-6 kelimelik SOMUT,
+GÖRSEL OLARAK ARANABİLİR bir İngilizce arama sorgusu yaz.
 
-    scene_short = scene[:350]
+KURALLAR:
+- Soyut kavram yazma.
+- Metinde geçen somut özel isim, nesne, yer, olay, dönem varsa
+  onu kullan.
+- Sadece sorguyu yaz, başka hiçbir açıklama ekleme.
+- Tırnak işareti kullanma.
+"""
 
-    tr = (
-        f"{topic[:70]} "
-        f"{scene_short[:100]} "
-        f"tarih fotoğrafı"
-    )
+    raw = call_gemini_with_retry(prompt)
 
-    en = (
-        f"{topic[:70]} "
-        f"{scene_short[:120]} "
-        f"historical photograph"
-    )
+    if not raw:
+        return None
 
-    return tr[:180], en[:180]
+    query = raw.strip().strip('"').strip()
+    query = " ".join(query.split())
+
+    if not query or len(query) < 3:
+        return None
+
+    return query[:180]
+
+
+def make_fallback_query(topic, scene):
+    scene_short = scene[:250]
+    en = f"{topic[:70]} {scene_short[:120]} historical documentary"
+    return en[:180]
+
+
+# ---------------- PEXELS ----------------
+
+def pexels_video_search(query):
+    key = os.environ.get("PEXELS_API_KEY")
+    if not key:
+        return []
+
+    url = "https://api.pexels.com/videos/search"
+    headers = {"Authorization": key}
+    params = {"query": query, "per_page": 15, "orientation": "landscape"}
+
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        results = []
+        for video in data.get("videos", []):
+            files = video.get("video_files", [])
+            landscape_files = [
+                f for f in files
+                if (f.get("width") or 0) > (f.get("height") or 0)
+            ]
+            candidates = landscape_files if landscape_files else files
+            candidates = sorted(
+                candidates, key=lambda f: abs((f.get("width") or 0) - 1280)
+            )
+            if candidates:
+                link = candidates[0].get("link")
+                if link:
+                    results.append(link)
+        return results
+
+    except Exception as e:
+        print("      Pexels video hata:", e)
+        return []
 
 
 def pexels_search(query):
-
     key = os.environ.get("PEXELS_API_KEY")
-
     if not key:
-        print("      Pexels API key yok.")
         return []
 
     url = "https://api.pexels.com/v1/search"
-
-    headers = {
-        "Authorization": key
-    }
-
-    params = {
-        "query": query,
-        "per_page": 30,
-        "orientation": "landscape"
-    }
+    headers = {"Authorization": key}
+    params = {"query": query, "per_page": 30, "orientation": "landscape"}
 
     try:
-
-        r = session.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=30
-        )
-
+        r = session.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
-
         data = r.json()
 
         results = []
-
         for photo in data.get("photos", []):
-
             src = photo.get("src", {})
-
-            image = (
-                src.get("large2x")
-                or src.get("large")
-                or src.get("original")
-            )
-
+            image = src.get("large2x") or src.get("large") or src.get("original")
             if image:
                 results.append(image)
-
         return results
 
     except Exception as e:
-
         print("      Pexels hata:", e)
-
         return []
 
 
-def wikimedia_search(query):
+# ---------------- PIXABAY ----------------
 
-    url = "https://commons.wikimedia.org/w/api.php"
+def pixabay_video_search(query):
+    key = os.environ.get("PIXABAY_API_KEY")
+    if not key:
+        return []
 
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrnamespace": 6,
-        "gsrlimit": 50,
-        "prop": "imageinfo",
-        "iiprop": "url|mime"
-    }
+    url = "https://pixabay.com/api/videos/"
+    params = {"key": key, "q": query, "per_page": 20, "safesearch": "true"}
 
     try:
-
-        r = session.get(
-            url,
-            params=params,
-            timeout=30
-        )
-
+        r = session.get(url, params=params, timeout=30)
         r.raise_for_status()
-
         data = r.json()
 
         results = []
-
-        pages = (
-            data
-            .get("query", {})
-            .get("pages", {})
-        )
-
-        for page in pages.values():
-
-            info = page.get(
-                "imageinfo",
-                []
+        for hit in data.get("hits", []):
+            videos = hit.get("videos", {})
+            candidate = (
+                videos.get("large")
+                or videos.get("medium")
+                or videos.get("small")
+                or videos.get("tiny")
             )
-
-            if not info:
-                continue
-
-            item = info[0]
-
-            url2 = item.get("url")
-            mime = item.get("mime", "")
-
-            if (
-                url2
-                and mime.startswith("image/")
-            ):
-                results.append(url2)
-
+            if candidate and candidate.get("url"):
+                results.append(candidate["url"])
         return results
 
     except Exception as e:
-
-        print("      Wikimedia hata:", e)
-
+        print("      Pixabay video hata:", e)
         return []
 
 
-def unsplash_search(query):
+def pixabay_search(query):
+    key = os.environ.get("PIXABAY_API_KEY")
+    if not key:
+        return []
 
-    url = (
-        "https://source.unsplash.com/1600x900/?"
-        + requests.utils.quote(query)
-    )
+    url = "https://pixabay.com/api/"
+    params = {
+        "key": key, "q": query, "image_type": "photo",
+        "orientation": "horizontal", "per_page": 30, "safesearch": "true"
+    }
 
     try:
+        r = session.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
 
-        r = session.get(
-            url,
-            timeout=30,
-            allow_redirects=True
-        )
+        results = []
+        for hit in data.get("hits", []):
+            image = hit.get("largeImageURL") or hit.get("webformatURL")
+            if image:
+                results.append(image)
+        return results
 
-        if (
-            r.status_code == 200
-            and
-            r.headers.get(
-                "content-type",
-                ""
-            ).startswith("image/")
-        ):
-            return [r.url]
+    except Exception as e:
+        print("      Pixabay foto hata:", e)
+        return []
 
-    except Exception:
-        pass
 
-    return []
+# ---------------- WIKIMEDIA ----------------
 
+def wikimedia_search(query):
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query", "format": "json", "generator": "search",
+        "gsrsearch": query, "gsrnamespace": 6, "gsrlimit": 50,
+        "prop": "imageinfo", "iiprop": "url|mime"
+    }
+
+    try:
+        r = session.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        results = []
+        pages = data.get("query", {}).get("pages", {})
+        for page in pages.values():
+            info = page.get("imageinfo", [])
+            if not info:
+                continue
+            item = info[0]
+            url2 = item.get("url")
+            mime = item.get("mime", "")
+            if url2 and mime.startswith("image/"):
+                results.append(url2)
+        return results
+
+    except Exception as e:
+        print("      Wikimedia hata:", e)
+        return []
+
+
+# ---------------- İNDİRME ----------------
 
 def download_image(url, path):
-
     try:
-
-        r = session.get(
-            url,
-            timeout=40,
-            stream=True
-        )
-
+        r = session.get(url, timeout=40, stream=True)
         r.raise_for_status()
-
-        ctype = r.headers.get(
-            "content-type",
-            ""
-        ).lower()
-
+        ctype = r.headers.get("content-type", "").lower()
         if not ctype.startswith("image/"):
             return False
-
         with open(path, "wb") as f:
-
             for chunk in r.iter_content(65536):
-
                 if chunk:
                     f.write(chunk)
-
-        if not os.path.exists(path):
+        if not os.path.exists(path) or os.path.getsize(path) < 10000:
+            if os.path.exists(path):
+                os.remove(path)
             return False
-
-        if os.path.getsize(path) < 10000:
-
-            os.remove(path)
-
-            return False
-
         return True
-
     except Exception:
-
         try:
             if os.path.exists(path):
                 os.remove(path)
         except:
             pass
-
         return False
 
 
-def image_hash(path):
-
+def download_video(url, path):
     try:
+        r = session.get(url, timeout=90, stream=True)
+        r.raise_for_status()
+        ctype = r.headers.get("content-type", "").lower()
+        if not ctype.startswith("video/"):
+            return False
+        with open(path, "wb") as f:
+            for chunk in r.iter_content(65536):
+                if chunk:
+                    f.write(chunk)
+        if not os.path.exists(path) or os.path.getsize(path) < 200000:
+            if os.path.exists(path):
+                os.remove(path)
+            return False
+        return True
+    except Exception:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except:
+            pass
+        return False
 
+
+def file_hash(path):
+    try:
         h = hashlib.sha256()
-
         with open(path, "rb") as f:
-
             while True:
-
                 data = f.read(1024 * 1024)
-
                 if not data:
                     break
-
                 h.update(data)
-
         return h.hexdigest()
-
     except:
         return None
 
 
-def image_duration(index):
+def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
+    for source_name, search, query, kind in sources:
+        if not query:
+            continue
 
-    values = [
-        5, 7, 6, 8,
-        7, 6, 9, 8
-    ]
+        print("   🔎", source_name, "-", query[:60])
+        urls = search(query)
 
-    return values[
-        index % len(values)
-    ]
+        for url in urls:
+            if not url or url in used_urls:
+                continue
+
+            ext = "mp4" if kind == "video" else "jpg"
+            filename = f"visual_{success + 1:03d}.{ext}"
+            path = os.path.join(visuals_dir, filename)
+
+            ok = download_video(url, path) if kind == "video" else download_image(url, path)
+            if not ok:
+                continue
+
+            h = file_hash(path)
+            if h in used_hashes:
+                try:
+                    os.remove(path)
+                except:
+                    pass
+                continue
+
+            return path, source_name, url, h, kind
+
+    return None, None, None, None, None
 
 
 def main():
-
     print("================================")
-    print("🧠 GELİŞMİŞ GÖRSEL MOTORU")
+    print("🧠 UZUN VİDEO GÖRSEL/VİDEO MOTORU")
     print("================================")
-
-    with open(
-        CONTENT,
-        "r",
-        encoding="utf-8"
-    ) as f:
-
-        content = f.read()
 
     topic = get_topic()
-
-    scenes = get_scenes(
-        content
-    )
+    narration = get_narration_text()
+    scenes = chunk_into_scenes(narration)
 
     print("Konu:", topic)
     print("Sahne sayısı:", len(scenes))
     print()
-    print("Kaynak sırası:")
-    print("1️⃣ Pexels")
-    print("2️⃣ Wikimedia Commons")
-    print("3️⃣ Unsplash")
-    print("♻️ Aynı görsel tekrar: KAPALI")
-    print()
 
     for file in os.listdir(VISUALS):
-
-        path = os.path.join(
-            VISUALS,
-            file
-        )
-
+        path = os.path.join(VISUALS, file)
         if os.path.isfile(path):
-
             try:
                 os.remove(path)
             except:
                 pass
 
     manifest = []
-
-    used_urls = set()
-    used_hashes = set()
-
+    used_urls, used_hashes = load_used_visuals()
     success = 0
+    last_good_path = None
+    last_good_kind = "image"
 
-    for i, scene in enumerate(
-        scenes,
-        1
-    ):
+    for i, scene in enumerate(scenes, 1):
+        print(f"[{i}/{len(scenes)}]")
+        print("🎬 SAHNE:", scene[:100])
 
-        scene = clean_scene(scene)
+        smart_query = generate_visual_query(scene, topic)
+        fallback_query = make_fallback_query(topic, scene)
 
-        if (
-            len(scene) < 40
-            or
-            "ses efekti" in scene.lower()
-            or
-            "geçiş müziği" in scene.lower()
-        ):
-            continue
+        if smart_query:
+            print("   🧠 Akıllı sorgu:", smart_query)
 
-        tr, en = make_queries(
-            topic,
-            scene
+        sources = []
+
+        if smart_query:
+            sources.append(("Pexels Video (akıllı sorgu)", pexels_video_search, smart_query, "video"))
+            sources.append(("Pixabay Video (akıllı sorgu)", pixabay_video_search, smart_query, "video"))
+
+        sources.append(("Pexels Video (genel)", pexels_video_search, fallback_query, "video"))
+        sources.append(("Pixabay Video (genel)", pixabay_video_search, fallback_query, "video"))
+
+        if smart_query:
+            sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query, "image"))
+            sources.append(("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query, "image"))
+            sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query, "image"))
+
+        sources.append(("Pexels Foto (genel)", pexels_search, fallback_query, "image"))
+        sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query, "image"))
+        sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query, "image"))
+
+        selected, selected_source, url, h, kind = try_sources(
+            sources, used_urls, used_hashes, success, VISUALS
         )
 
-        print(
-            f"[{i}/{len(scenes)}]"
-        )
-
-        print(
-            "🎬 SAHNE:",
-            scene[:120]
-        )
-
-        sources = [
-            (
-                "Pexels",
-                pexels_search,
-                en
-            ),
-            (
-                "Wikimedia Commons",
-                wikimedia_search,
-                en
-            ),
-            (
-                "Wikimedia Commons TR",
-                wikimedia_search,
-                tr
-            ),
-            (
-                "Unsplash",
-                unsplash_search,
-                en
-            )
-        ]
-
-        selected = None
-        selected_source = None
-
-        for source_name, search, query in sources:
-
-            print(
-                "   🔎",
-                source_name
+        if not selected:
+            generic_sources = []
+            for q in GENERIC_FALLBACK_QUERIES_EN:
+                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image"))
+                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image"))
+            selected, selected_source, url, h, kind = try_sources(
+                generic_sources, used_urls, used_hashes, success, VISUALS
             )
 
-            urls = search(query)
+        if not selected and last_good_path:
+            selected = last_good_path
+            kind = last_good_kind
+            selected_source = "Tekrar kullanılan sahne (hiçbir kaynak bulunamadı)"
+            print("   ♻️ Hiçbir yeni içerik bulunamadı, bir önceki sahne kullanılıyor.")
+        elif selected:
+            used_urls.add(url)
+            if h:
+                used_hashes.add(h)
+            success += 1
+            last_good_path = selected
+            last_good_kind = kind
 
-            for url in urls:
-
-                if not url:
-                    continue
-
-                if url in used_urls:
-                    continue
-
-                filename = (
-                    f"visual_{success + 1:03d}.jpg"
-                )
-
-                path = os.path.join(
-                    VISUALS,
-                    filename
-                )
-
-                if not download_image(
-                    url,
-                    path
-                ):
-                    continue
-
-                h = image_hash(path)
-
-                if h in used_hashes:
-
-                    try:
-                        os.remove(path)
-                    except:
-                        pass
-
-                    continue
-
-                used_urls.add(url)
-
-                if h:
-                    used_hashes.add(h)
-
-                selected = path
-                selected_source = source_name
-
-                break
-
-            if selected:
-                break
+        manifest.append({
+            "scene": i,
+            "scene_text": scene[:300],
+            "smart_query": smart_query,
+            "file": selected,
+            "type": kind or "image",
+            "source": selected_source or "YOK"
+        })
 
         if selected:
-
-            duration = image_duration(
-                success
-            )
-
-            manifest.append({
-
-                "scene": i,
-
-                "scene_text": scene,
-
-                "query_tr": tr,
-
-                "query_en": en,
-
-                "file": selected,
-
-                "duration": duration,
-
-                "source": selected_source
-
-            })
-
-            success += 1
-
-            print(
-                f"   ✅ {selected_source} "
-                f"| {duration} saniye"
-            )
-
+            print(f"   ✅ [{kind}] {selected_source}")
         else:
-
-            print(
-                "   ⚠️ Görsel bulunamadı"
-            )
+            print("   ⚠️ Hiç içerik bulunamadı.")
 
         print()
-
         time.sleep(0.2)
 
-    with open(
-        MANIFEST,
-        "w",
-        encoding="utf-8"
-    ) as f:
+    fallback = None
+    fallback_kind = "image"
+    for item in manifest:
+        if item["file"]:
+            fallback = item["file"]
+            fallback_kind = item["type"]
+            break
 
-        json.dump(
-            manifest,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    for item in manifest:
+        if not item["file"] and fallback:
+            item["file"] = fallback
+            item["type"] = fallback_kind
+            item["source"] = "Geriye doğru doldurulan sahne"
+
+    with open(MANIFEST, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    save_used_visuals(used_urls, used_hashes)
+
+    video_count = sum(1 for m in manifest if m["type"] == "video")
 
     print("================================")
-    print("✅ GÖRSEL ARAMA BİTTİ")
+    print("✅ GÖRSEL/VİDEO ARAMA BİTTİ")
     print("================================")
-    print(
-        f"Başarılı: {success} / {len(scenes)}"
-    )
-    print(
-        "Manifest:",
-        MANIFEST
-    )
+    print(f"Benzersiz içerik: {success} / {len(scenes)}")
+    print(f"Video sahne: {video_count} / {len(manifest)}")
+    print("Manifest:", MANIFEST)
 
 
 if __name__ == "__main__":
