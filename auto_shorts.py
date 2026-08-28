@@ -5,6 +5,7 @@ import json
 import re
 import time
 import requests
+from datetime import datetime
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -13,7 +14,7 @@ REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 CONTENT_JSON = os.path.join(REPO_BASE, "shorts_content.json")
 TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
-TOPIC_HISTORY_FILE = os.path.join(OUT, "shorts_topic_history.json")
+TOPIC_HISTORY_FILE = os.path.join(REPO_BASE, "shorts_topic_history.json")
 
 SCRIPT_TEXT = os.path.join(OUT, "shorts_script.txt")
 VOICE = os.path.join(OUT, "shorts_voice.wav")
@@ -24,6 +25,9 @@ META_FILE = os.path.join(OUT, "shorts_meta.json")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 MAX_HISTORY = 60
+
+# Shorts'un günde kaç kez üretileceğini belirleyen hedef saatler (Europe/Istanbul)
+HEDEF_SAATLER = {9, 12, 15, 18, 21}
 
 
 def load_history():
@@ -155,6 +159,12 @@ def run(cmd, name):
 
 
 def main():
+
+    simdi_saat = datetime.now().hour
+    if simdi_saat not in HEDEF_SAATLER:
+        print(f"⏭️ Saat {simdi_saat}:00 hedef saatlerden ({sorted(HEDEF_SAATLER)}) "
+              f"biri değil, bu run atlanıyor.")
+        return
 
     os.makedirs(OUT, exist_ok=True)
 
