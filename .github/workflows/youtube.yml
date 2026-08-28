@@ -31,7 +31,7 @@ jobs:
           set -euxo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1
+          sudo apt-get install -y ffmpeg libespeak-ng1 libsndfile1 wget
 
           echo "=== Piper kuruluyor ==="
 
@@ -42,42 +42,56 @@ jobs:
             https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
             -O "$RUNNER_TEMP/piper.tar.gz"
 
-          tar -xzf "$RUNNER_TEMP/piper.tar.gz" -C "$RUNNER_TEMP/piper"
+          tar -xzf "$RUNNER_TEMP/piper.tar.gz" \
+            -C "$RUNNER_TEMP/piper"
 
           echo "=== Piper araniyor ==="
-          find "$RUNNER_TEMP/piper" -maxdepth 3 -type f -print
 
-          PIPER_EXE="$(find "$RUNNER_TEMP/piper" -type f -name piper -print -quit)"
+          find "$RUNNER_TEMP/piper" \
+            -maxdepth 4 \
+            -type f \
+            -print
+
+          PIPER_EXE="$(
+            find "$RUNNER_TEMP/piper" \
+            -type f \
+            -name piper \
+            -print -quit
+          )"
 
           if [ -z "$PIPER_EXE" ]; then
-            echo "Piper binary bulunamadi!"
+            echo "❌ Piper binary bulunamadi!"
             exit 1
           fi
 
-          echo "Piper binary: $PIPER_EXE"
+          echo "✅ Piper binary: $PIPER_EXE"
 
           sudo mkdir -p /opt/piper
-          sudo cp -a "$(dirname "$PIPER_EXE")"/. /opt/piper/
+
+          sudo cp -a \
+            "$(dirname "$PIPER_EXE")"/. \
+            /opt/piper/
 
           sudo chmod +x /opt/piper/piper
 
           sudo find /opt/piper -type f \
             \( -name "*.so" -o -name "*.so.*" \) \
-            -exec sh -c 'echo "$(dirname "$1")"' _ {} \; \
+            -exec sh -c \
+            'echo "$(dirname "$1")"' _ {} \; \
             | sort -u \
             | sudo tee /etc/ld.so.conf.d/piper.conf
 
-          echo "/opt/piper" | sudo tee -a /etc/ld.so.conf.d/piper.conf
+          echo "/opt/piper" \
+            | sudo tee -a /etc/ld.so.conf.d/piper.conf
 
           sudo ldconfig
 
-          echo "=== Piper binary ==="
+          echo "=== Piper test ==="
+
           /opt/piper/piper --help || true
 
-          echo "=== Piper kutuphaneleri ==="
-          ldd /opt/piper/piper
-
           echo "=== MODEL DOSYASI ARANIYOR ==="
+
           MODEL_FILE=""
 
           for f in \
@@ -92,69 +106,169 @@ jobs:
           done
 
           if [ -z "$MODEL_FILE" ]; then
-            echo "❌ Piper modeli bulunamadı!"
+            echo "❌ Piper modeli bulunamadi!"
+
             echo "=== WORKSPACE MODELLER ==="
-            find "$GITHUB_WORKSPACE" -maxdepth 4 -type f \
-              \( -name "*.onnx" -o -name "*.onnx.json" \) -print
+
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 5 \
+              -type f \
+              \( -name "*.onnx" -o -name "*.onnx.json" \) \
+              -print
+
             exit 1
           fi
 
-          echo "✅ Model bulundu: $MODEL_FILE"
+          echo "✅ Model bulundu:"
+          echo "$MODEL_FILE"
+
           ls -lh "$MODEL_FILE"
 
-          echo "=== Piper test ==="
-          printf '%s\n' "Merhaba, bu Piper ses testidir." | /opt/piper/piper \
-            -m "$MODEL_FILE" \
-            -f "$RUNNER_TEMP/test.wav"
+          echo "=== Piper WAV TEST ==="
+
+          printf '%s\n' \
+            "Merhaba, bu Piper ses testidir." \
+            | /opt/piper/piper \
+              -m "$MODEL_FILE" \
+              -f "$RUNNER_TEMP/test.wav"
 
           if [ ! -s "$RUNNER_TEMP/test.wav" ]; then
-            echo "❌ Piper WAV dosyası oluşturulamadı!"
+            echo "❌ Piper WAV oluşturulamadi!"
             exit 1
           fi
 
-          echo "=== Piper WAV kontrol ==="
+          echo "✅ Piper WAV oluşturuldu."
+
           file "$RUNNER_TEMP/test.wav"
           ls -lh "$RUNNER_TEMP/test.wav"
 
-          echo "Piper test BASARILI."
+          echo "PIPER_BIN=/opt/piper/piper" \
+            >> "$GITHUB_ENV"
 
-          echo "PIPER_BIN=/opt/piper/piper" >> "$GITHUB_ENV"
-          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" >> "$GITHUB_ENV"
+          echo "PIPER_VOICE_PATH=$GITHUB_WORKSPACE/models" \
+            >> "$GITHUB_ENV"
 
       - name: Python paketlerini kur
+        shell: bash
         run: |
+          set -euxo pipefail
+
           python -m pip install --upgrade pip
-          pip install Pillow requests google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+
+          python -m pip install \
+            "Pillow<12" \
+            "requests<3" \
+            "google-api-python-client" \
+            "google-auth" \
+            "google-auth-oauthlib" \
+            "google-auth-httplib2"
+
+          echo "=== PYTHON TEST ==="
+
+          python --version
+
+          python -c \
+            "import PIL, requests, googleapiclient, google.auth; print('Python paketleri OK')"
 
       - name: YouTube token oluştur
+        shell: bash
         env:
           TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
         run: |
+          set -eu
+
+          if [ -z "$TOKEN_JSON" ]; then
+            echo "❌ TOKEN_JSON secret bulunamadi!"
+            exit 1
+          fi
+
           printf '%s' "$TOKEN_JSON" > token.json
 
+          test -s token.json
+
+          echo "✅ token.json oluşturuldu."
+
       - name: Config oluştur
+        shell: bash
         env:
           CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
         run: |
+          set -eu
+
+          if [ -z "$CONFIG_JSON" ]; then
+            echo "❌ CONFIG_JSON secret bulunamadi!"
+            exit 1
+          fi
+
           printf '%s' "$CONFIG_JSON" > config.json
 
-      - name: Video oluştur ve yükle
+          test -s config.json
+
+          echo "✅ config.json oluşturuldu."
+
+      - name: API key kontrolü
+        shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+        run: |
+          set -eu
+
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "⚠️ GEMINI_API_KEY bulunamadi."
+          else
+            echo "✅ GEMINI_API_KEY mevcut."
+          fi
+
+          if [ -z "$CEREBRAS_API_KEY" ]; then
+            echo "⚠️ CEREBRAS_API_KEY bulunamadi."
+          else
+            echo "✅ CEREBRAS_API_KEY mevcut."
+          fi
+
+      - name: Video oluştur ve yükle
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
+          set -e
+
+          echo "================================"
+          echo "🚀 AUTO VIDEO BAŞLIYOR"
+          echo "================================"
+
           python auto_video.py
 
       - name: Geçmiş dosyalarını commit'le
         if: always()
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add video_topic_history.json video_used_visuals.json 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "Otomatik: uzun video konu/görsel geçmişi güncellendi"
-          git checkout -- . || true
+          set +e
+
+          git config user.name \
+            "github-actions[bot]"
+
+          git config user.email \
+            "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            video_topic_history.json \
+            video_used_visuals.json \
+            2>/dev/null
+
+          git diff --cached --quiet
+
+          if [ $? -ne 0 ]; then
+            git commit \
+              -m "Otomatik: video konu/görsel geçmişi güncellendi"
+          fi
+
+          git checkout -- . 2>/dev/null || true
+
           git pull --rebase
+
           git push
