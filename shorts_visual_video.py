@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import textwrap
+import shutil
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -11,6 +12,7 @@ DURATIONS_FILE = os.path.join(OUT, "shorts_scene_durations.json")
 VOICE = os.path.join(OUT, "shorts_voice.wav")
 CONCAT = os.path.join(OUT, "shorts_unique_visuals.txt")
 VIDEO = os.path.join(OUT, "shorts_video_no_audio.mp4")
+FRAGMENTS_DIR = os.path.join(OUT, "shorts_fragments")
 
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -27,6 +29,32 @@ def wrap_for_subtitle(text, width=28):
     lines = textwrap.wrap(text, width=width)
     return "\n".join(lines[:3])
 
+
+def build_drawtext(text):
+    if not text:
+        return None
+
+    wrapped = wrap_for_subtitle(text)
+    wrapped = escape_drawtext(wrapped)
+
+    return (
+        "drawtext=fontfile='" + FONT_PATH + "'"
+        ":text='" + wrapped + "'"
+        ":fontsize=58"
+        ":fontcolor=white"
+        ":borderw=4"
+        ":bordercolor=black"
+        ":box=1"
+        ":boxcolor=black@0.45"
+        ":boxborderw=20"
+        ":line_spacing=8"
+        ":x=(w-text_w)/2"
+        ":y=h-h/3.2"
+    )
+
+
+shutil.rmtree(FRAGMENTS_DIR, ignore_errors=True)
+os.makedirs(FRAGMENTS_DIR, exist_ok=True)
 
 voice_cmd = [
     "ffprobe", "-v", "error",
@@ -49,20 +77,15 @@ real_durations = [item["duration"] for item in scene_duration_data]
 real_texts = [item["text"] for item in scene_duration_data]
 
 print("================================")
-print("🧠 SHORTS DİKEY GÖRSEL MOTORU (BİREBİR SAHNE EŞLEMESİ)")
+print("🧠 SHORTS DİKEY GÖRSEL/VİDEO MOTORU (BİREBİR SAHNE EŞLEMESİ)")
 print("================================")
 print("Ses:", round(voice_duration, 2), "saniye")
 print("Manifest kaydı:", len(manifest))
 print("Sahne süre kaydı:", len(real_durations))
 print()
 
-# --- ÖNEMLİ: Artık hiçbir dedup/atlama yapmıyoruz. ---
-# Her sahne (manifest'teki her kayıt) kendi sırasında, kendi görseliyle
-# kullanılır — görsel aynı bile olsa. Böylece:
-# sequence uzunluğu == real_durations uzunluğu == real_texts uzunluğu
-# HER ZAMAN garanti edilir, altyazı asla kaymaz/üst üste binmez.
-
 sequence = [item["file"] for item in manifest]
+kinds = [item.get("type", "image") for item in manifest]
 
 if len(sequence) != len(real_durations):
     raise SystemExit(
@@ -79,103 +102,97 @@ diff = voice_duration - sum(durations)
 durations[-1] += diff
 
 print("✅ Sahne sayıları birebir eşleşiyor, gerçek sürelerle devam ediliyor.")
-print("Toplam görsel süresi:", round(sum(durations), 2), "sn")
+print("Toplam hedef süre:", round(sum(durations), 2), "sn")
 print()
+
+# --- Her sahneyi kendi tam süresinde, kendi altyazısıyla birlikte
+# ayrı bir mp4 parçası olarak render ediyoruz. Video klipse gerekirse
+# döngüye alınıp kırpılıyor, fotoğrafsa Ken Burns'süz statik kare olarak
+# tutuluyor. Böylece video/fotoğraf karışımı hiçbir senkron sorunu
+# yaratmadan aynı akışta birleştirilebiliyor.
+
+vf_scale_crop = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
+
+fragment_paths = []
+
+for idx, (path, duration, text, kind) in enumerate(
+    zip(sequence, durations, scene_texts, kinds), 1
+):
+    frag_path = os.path.join(FRAGMENTS_DIR, f"frag_{idx:03d}.mp4")
+
+    drawtext = build_drawtext(text)
+
+    vf = vf_scale_crop
+    if drawtext:
+        vf = vf + "," + drawtext
+
+    if kind == "video":
+        cmd = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", path,
+            "-t", f"{duration:.3f}",
+            "-vf", vf,
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-an",
+            frag_path
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", path,
+            "-t", f"{duration:.3f}",
+            "-vf", vf,
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-an",
+            frag_path
+        ]
+
+    print(f"[{idx}/{len(sequence)}] ({kind}) parça oluşturuluyor - {duration:.2f} sn")
+
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    if result.returncode != 0 or not os.path.exists(frag_path):
+        raise SystemExit(f"❌ Parça oluşturulamadı: {path} (sahne {idx})")
+
+    fragment_paths.append(frag_path)
+
+print()
+print("🎬 Parçalar birleştiriliyor...")
 
 with open(CONCAT, "w", encoding="utf-8") as f:
-
-    for path, duration in zip(sequence, durations):
-
-        path_escaped = os.path.abspath(path)
-        path_escaped = path_escaped.replace("'", "'\\''")
-
-        f.write(f"file '{path_escaped}'\n")
-        f.write(f"duration {duration:.3f}\n")
-
-    last = os.path.abspath(sequence[-1])
-    last = last.replace("'", "'\\''")
-
-    f.write(f"file '{last}'\n")
-
-print("Görsel geçişleri (sahne sayısı):", len(sequence))
-print()
-
-# --- Altyazı zamanlaması: kümülatif, üst üste binmesi imkansız ---
-
-starts = []
-cursor = 0.0
-
-for duration in durations:
-    starts.append(cursor)
-    cursor += duration
-
-drawtext_filters = []
-
-for text, start, duration in zip(scene_texts, starts, durations):
-
-    if not text:
-        continue
-
-    wrapped = wrap_for_subtitle(text)
-    wrapped = escape_drawtext(wrapped)
-
-    # Küçük bir güvenlik payı: bitişten 0.02 sn önce kapat,
-    # bir sonraki sahnenin başlangıcıyla asla çakışmasın.
-    end = start + duration - 0.02
-
-    drawtext_filters.append(
-        "drawtext=fontfile='" + FONT_PATH + "'"
-        ":text='" + wrapped + "'"
-        ":fontsize=58"
-        ":fontcolor=white"
-        ":borderw=4"
-        ":bordercolor=black"
-        ":box=1"
-        ":boxcolor=black@0.45"
-        ":boxborderw=20"
-        ":line_spacing=8"
-        ":x=(w-text_w)/2"
-        ":y=h-h/3.2"
-        f":enable='between(t,{start:.3f},{end:.3f})'"
-    )
-
-vf_base = (
-    "scale=1080:1920:force_original_aspect_ratio=increase,"
-    "crop=1080:1920,"
-    "format=yuv420p"
-)
-
-if drawtext_filters:
-    vf = vf_base + "," + ",".join(drawtext_filters)
-else:
-    vf = vf_base
-
-print("🎬 Dikey (Shorts) video oluşturuluyor (kesin senkron altyazılı)...")
+    for frag in fragment_paths:
+        frag_escaped = os.path.abspath(frag).replace("'", "'\\''")
+        f.write(f"file '{frag_escaped}'\n")
 
 cmd = [
     "ffmpeg", "-y",
     "-f", "concat",
     "-safe", "0",
     "-i", CONCAT,
-    "-vf", vf,
-    "-r", "30",
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "23",
-    "-an",
+    "-c", "copy",
     VIDEO
 ]
 
 result = subprocess.run(cmd)
 
 if result.returncode != 0:
-    raise SystemExit("FFmpeg video oluşturamadı.")
+    raise SystemExit("FFmpeg parçaları birleştiremedi.")
+
+shutil.rmtree(FRAGMENTS_DIR, ignore_errors=True)
 
 print()
 print("================================")
-print("✅ SHORTS DİKEY GÖRSELLİ VİDEO (KESİN SENKRON)")
+print("✅ SHORTS DİKEY GÖRSELLİ/VİDEOLU (KESİN SENKRON)")
 print("================================")
 print("Dosya:", VIDEO)
-print("Görsel:", len(sequence))
+print("Sahne:", len(sequence))
 print("Ses hedefi:", round(voice_duration, 2), "sn")
 print("================================")
