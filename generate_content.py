@@ -9,14 +9,14 @@ BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+    print("⚠️ GEMINI_API_KEY bulunamadı.")
 
 if not GROQ_API_KEY:
-    print("⚠️ GROQ_API_KEY bulunamadı. Groq yedek olarak kullanılamayacak.")
+    print("⚠️ GROQ_API_KEY bulunamadı.")
 
 TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
 TOPIC_HISTORY_FILE = os.path.join(REPO_BASE, "video_topic_history.json")
@@ -28,11 +28,11 @@ GEMINI_URL = (
 )
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
 GROQ_MODEL = "openai/gpt-oss-120b"
 
 MAX_HISTORY = 30
 
-# Yaklaşık 20 dakikalık video
 BOLUM_SAYISI = 2
 BOLUM_BASINA_KELIME = 1500
 
@@ -69,10 +69,10 @@ okuyucu yalnızca gerçek anlatım cümlelerini görmelidir.
 
 
 def call_gemini(prompt, max_retries=3):
-    """
-    Önce Gemini denenir.
-    429 quota geldiğinde beklemek yerine Groq'a geçilir.
-    """
+
+    if not GEMINI_API_KEY:
+        print("❌ GEMINI_API_KEY bulunamadı.")
+        return None
 
     retry_statuses = {500, 502, 503, 504}
 
@@ -107,7 +107,9 @@ def call_gemini(prompt, max_retries=3):
 
                 try:
                     return data["candidates"][0]["content"]["parts"][0]["text"]
+
                 except (KeyError, IndexError, TypeError):
+
                     print("❌ Gemini cevabı beklenen formatta değil.")
                     return None
 
@@ -115,11 +117,13 @@ def call_gemini(prompt, max_retries=3):
 
                 print("⚠️ Gemini 429 / kota hatası.")
                 print("🔄 Otomatik olarak Groq'a geçilecek.")
+
                 return None
 
             if response.status_code in retry_statuses:
 
                 if attempt >= max_retries:
+
                     print("❌ Gemini sunucu hatası.")
                     return None
 
@@ -138,26 +142,37 @@ def call_gemini(prompt, max_retries=3):
 
             print("❌ Gemini kalıcı hata:")
             print(response.text[:2000])
+
             return None
 
         except requests.exceptions.Timeout:
 
             if attempt >= max_retries:
+
                 print("❌ Gemini timeout.")
                 return None
 
             wait_time = 10 * attempt
-            print(f"⚠️ Timeout. {wait_time} saniye bekleniyor.")
+
+            print(
+                f"⚠️ Timeout. {wait_time} saniye bekleniyor."
+            )
+
             time.sleep(wait_time)
 
         except requests.exceptions.RequestException as e:
 
             if attempt >= max_retries:
+
                 print("❌ Gemini ağ hatası:", str(e))
                 return None
 
             wait_time = 10 * attempt
-            print(f"⚠️ Ağ hatası. {wait_time} saniye bekleniyor.")
+
+            print(
+                f"⚠️ Ağ hatası. {wait_time} saniye bekleniyor."
+            )
+
             time.sleep(wait_time)
 
     return None
@@ -166,6 +181,7 @@ def call_gemini(prompt, max_retries=3):
 def call_groq(prompt, max_retries=3):
 
     if not GROQ_API_KEY:
+
         print("❌ GROQ_API_KEY bulunamadı.")
         return None
 
@@ -213,14 +229,27 @@ def call_groq(prompt, max_retries=3):
                 data = response.json()
 
                 try:
+
                     return data["choices"][0]["message"]["content"]
+
                 except (KeyError, IndexError, TypeError):
+
                     print("❌ Groq cevabı beklenen formatta değil.")
                     return None
 
+            if response.status_code == 401:
+
+                print("❌ Groq API key geçersiz.")
+                print(
+                    "⚠️ GitHub Secrets bölümündeki "
+                    "GROQ_API_KEY değerini kontrol et."
+                )
+
+                return None
+
             if response.status_code == 429:
 
-                print("⚠️ Groq da 429 verdi.")
+                print("⚠️ Groq 429 / kota hatası.")
 
                 if attempt >= max_retries:
                     return None
@@ -240,26 +269,45 @@ def call_groq(prompt, max_retries=3):
                     return None
 
                 wait_time = 10 * attempt
+
+                print(
+                    f"⏳ {wait_time} saniye bekleniyor..."
+                )
+
                 time.sleep(wait_time)
+
                 continue
 
             print("❌ Groq kalıcı hata:")
             print(response.text[:2000])
+
             return None
 
         except requests.exceptions.Timeout:
 
             if attempt >= max_retries:
+
                 print("❌ Groq timeout.")
                 return None
+
+            print(
+                f"⚠️ Groq timeout. "
+                f"{10 * attempt} saniye bekleniyor."
+            )
 
             time.sleep(10 * attempt)
 
         except requests.exceptions.RequestException as e:
 
             if attempt >= max_retries:
+
                 print("❌ Groq ağ hatası:", str(e))
                 return None
+
+            print(
+                f"⚠️ Groq ağ hatası. "
+                f"{10 * attempt} saniye bekleniyor."
+            )
 
             time.sleep(10 * attempt)
 
@@ -268,14 +316,18 @@ def call_groq(prompt, max_retries=3):
 
 def call_ai(prompt):
 
-    # 1. Önce Gemini
-    result = call_gemini(prompt)
+    # Önce Gemini denenir.
+    if GEMINI_API_KEY:
 
-    if result:
-        print("✅ İçerik Gemini tarafından üretildi.")
-        return result
+        result = call_gemini(prompt)
 
-    # 2. Gemini başarısızsa Groq
+        if result:
+
+            print("✅ İçerik Gemini tarafından üretildi.")
+
+            return result
+
+    # Gemini başarısızsa Groq kullanılır.
     print()
     print("================================")
     print("⚠️ GEMINI BAŞARISIZ")
@@ -285,7 +337,9 @@ def call_ai(prompt):
     result = call_groq(prompt)
 
     if result:
+
         print("✅ İçerik Groq tarafından üretildi.")
+
         return result
 
     raise SystemExit(
@@ -303,9 +357,11 @@ def load_history():
                 TOPIC_HISTORY_FILE,
                 encoding="utf-8"
             ) as f:
+
                 return json.load(f)
 
         except Exception:
+
             return []
 
     return []
@@ -393,6 +449,9 @@ BÖLÜM 2: <başlık> - <özet>
 
     raw = call_ai(prompt)
 
+    if not raw:
+        return "", []
+
     topic = ""
     bolumler = []
 
@@ -404,12 +463,14 @@ BÖLÜM 2: <başlık> - <özet>
             continue
 
         if line.upper().startswith("KONU:"):
+
             topic = line.split(":", 1)[1].strip()
 
         elif (
             line.upper().startswith("BÖLÜM")
             or line.upper().startswith("BOLUM")
         ):
+
             bolumler.append(line)
 
     topic = re.sub(
@@ -418,7 +479,7 @@ BÖLÜM 2: <başlık> - <özet>
         topic
     ).strip().strip('"').strip()
 
-    if not bolumler:
+    if not bolumler and topic:
 
         bolumler = [
             f"BÖLÜM 1: {topic} - Konunun genel anlatımı"
@@ -506,6 +567,9 @@ Başlık, bölüm numarası veya sahne açıklaması yazma.
 
     raw = call_ai(prompt)
 
+    if not raw:
+        return ""
+
     return raw.strip()
 
 
@@ -579,6 +643,7 @@ def main():
 
                 topic = candidate_topic
                 bolumler = candidate_bolumler
+
                 break
 
             print(
@@ -593,6 +658,7 @@ def main():
             )
 
             if attempt < 1:
+
                 time.sleep(5)
 
     if not topic:
@@ -607,9 +673,11 @@ def main():
     print("🎯 Konu:", topic)
 
     for b in bolumler:
+
         print("  -", b)
 
     history.append(topic)
+
     save_history(history)
 
     os.makedirs(
@@ -676,6 +744,7 @@ def main():
         )
 
         if is_last:
+
             metadata_raw = maybe_metadata
 
         print(
@@ -702,6 +771,7 @@ def main():
     )
 
     print()
+
     print(
         f"📊 Toplam: {toplam_kelime} kelime"
     )
