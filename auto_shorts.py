@@ -160,11 +160,16 @@ def run(cmd, name):
 
 def main():
 
+    tetikleyici = os.environ.get("GITHUB_EVENT_NAME", "")
     simdi_saat = datetime.now().hour
-    if simdi_saat not in HEDEF_SAATLER:
+
+    if tetikleyici != "workflow_dispatch" and simdi_saat not in HEDEF_SAATLER:
         print(f"⏭️ Saat {simdi_saat}:00 hedef saatlerden ({sorted(HEDEF_SAATLER)}) "
               f"biri değil, bu run atlanıyor.")
         return
+
+    if tetikleyici == "workflow_dispatch":
+        print("🖐️ Elle tetiklendi, saat filtresi atlanıyor.")
 
     os.makedirs(OUT, exist_ok=True)
 
