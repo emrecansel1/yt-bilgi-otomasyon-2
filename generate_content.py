@@ -7,29 +7,34 @@ import random
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
-
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-if not API_KEY:
+if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+
+if not GROQ_API_KEY:
+    print("⚠️ GROQ_API_KEY bulunamadı. Groq yedek olarak kullanılamayacak.")
 
 TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
 TOPIC_HISTORY_FILE = os.path.join(REPO_BASE, "video_topic_history.json")
 OUTPUT_FILE = os.path.join(OUT, "current_content.txt")
 
-URL = (
+GEMINI_URL = (
     "https://generativelanguage.googleapis.com/"
     "v1beta/models/gemini-3.6-flash:generateContent"
 )
 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "openai/gpt-oss-120b"
+
 MAX_HISTORY = 30
 
-# 25 dakikalık seslendirmeyi (~3750 kelime) 2 bölümde doldurup
-# Gemini isteğini minimumda tutuyoruz.
+# Yaklaşık 20 dakikalık video
 BOLUM_SAYISI = 2
-BOLUM_BASINA_KELIME = 1875
+BOLUM_BASINA_KELIME = 1500
 
 METADATA_AYIRICI = "===METADATA_AYIRICI==="
 
@@ -46,303 +51,582 @@ KURALLAR:
 9. Metin doğrudan TTS sistemine gönderilecek.
 
 ÖNEMLİ:
-Bu bir film senaryosu değildir. Sahne yazma. Kamera hareketi
-yazma. Karakter hareketi yazma. Müzik veya ses efekti yazma.
-Parantez kullanma. Köşeli parantez kullanma. "[Hüzünlü müzik]",
-"(kamera yaklaşır)", "Sahne 1", "Bölüm 1" gibi ifadeler
-kesinlikle yazma. İzleyici bölümlere ayrıldığını fark etmemeli,
-anlatım kesintisiz tek bir belgesel akışı gibi hissetmeli.
+Bu bir film senaryosu değildir. Sahne yazma.
+Kamera hareketi yazma. Karakter hareketi yazma.
+Müzik veya ses efekti yazma.
+Parantez veya köşeli parantez kullanma.
 
-Sadece seçilen konuyu doğrudan anlat. Metin doğrudan TTS
-sistemine gönderileceği için okuyucu yalnızca gerçek anlatım
-cümlelerini görmelidir.
+"[Hüzünlü müzik]", "(kamera yaklaşır)", "Sahne 1",
+"Bölüm 1" gibi ifadeler kesinlikle yazma.
+
+İzleyici bölümlere ayrıldığını fark etmemeli.
+Anlatım kesintisiz tek bir belgesel akışı gibi hissettirmeli.
+
+Sadece seçilen konuyu doğrudan anlat.
+Metin doğrudan TTS sistemine gönderileceği için
+okuyucu yalnızca gerçek anlatım cümlelerini görmelidir.
 """
 
 
-def call_gemini_with_retry(prompt, max_retries=5):
-    retry_statuses = {429, 500, 502, 503, 504}
+def call_gemini(prompt, max_retries=3):
+    """
+    Önce Gemini denenir.
+    429 quota geldiğinde beklemek yerine Groq'a geçilir.
+    """
+
+    retry_statuses = {500, 502, 503, 504}
 
     for attempt in range(1, max_retries + 1):
+
         print(f"🤖 Gemini isteği {attempt}/{max_retries}")
 
         try:
+
             response = requests.post(
-                URL,
-                params={"key": API_KEY},
-                json={"contents": [{"parts": [{"text": prompt}]}]},
+                GEMINI_URL,
+                params={"key": GEMINI_API_KEY},
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt
+                                }
+                            ]
+                        }
+                    ]
+                },
                 timeout=180
             )
 
-            print("HTTP:", response.status_code)
+            print("Gemini HTTP:", response.status_code)
 
             if response.ok:
+
                 data = response.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError):
+                    print("❌ Gemini cevabı beklenen formatta değil.")
+                    return None
+
+            if response.status_code == 429:
+
+                print("⚠️ Gemini 429 / kota hatası.")
+                print("🔄 Otomatik olarak Groq'a geçilecek.")
+                return None
 
             if response.status_code in retry_statuses:
-                if attempt >= max_retries:
-                    print("❌ Gemini tekrar deneme hakkı bitti.")
-                    print(response.text)
-                    raise SystemExit(1)
 
-                wait_time = 15 * (2 ** (attempt - 1)) + random.randint(0, 5)
-                print(f"⚠️ Gemini geçici olarak {response.status_code} döndürdü.")
-                print(f"⏳ {wait_time} saniye sonra tekrar denenecek...")
+                if attempt >= max_retries:
+                    print("❌ Gemini sunucu hatası.")
+                    return None
+
+                wait_time = (
+                    10 * (2 ** (attempt - 1))
+                    + random.randint(0, 5)
+                )
+
+                print(
+                    f"⏳ {wait_time} saniye sonra "
+                    "Gemini tekrar denenecek..."
+                )
+
                 time.sleep(wait_time)
                 continue
 
-            print("❌ Gemini kalıcı hata döndürdü.")
-            print(response.text)
-            raise SystemExit(1)
+            print("❌ Gemini kalıcı hata:")
+            print(response.text[:2000])
+            return None
 
         except requests.exceptions.Timeout:
+
             if attempt >= max_retries:
-                print("❌ Gemini zaman aşımı nedeniyle başarısız oldu.")
-                raise SystemExit(1)
-            wait_time = 15 * (2 ** (attempt - 1)) + random.randint(0, 5)
-            print("⚠️ İstek zaman aşımına uğradı.")
-            print(f"⏳ {wait_time} saniye sonra tekrar denenecek...")
+                print("❌ Gemini timeout.")
+                return None
+
+            wait_time = 10 * attempt
+            print(f"⚠️ Timeout. {wait_time} saniye bekleniyor.")
             time.sleep(wait_time)
 
         except requests.exceptions.RequestException as e:
+
             if attempt >= max_retries:
-                print("❌ Ağ hatası nedeniyle Gemini isteği başarısız oldu.")
-                print(str(e))
-                raise SystemExit(1)
-            wait_time = 15 * (2 ** (attempt - 1)) + random.randint(0, 5)
-            print("⚠️ Ağ hatası:", str(e))
-            print(f"⏳ {wait_time} saniye sonra tekrar denenecek...")
+                print("❌ Gemini ağ hatası:", str(e))
+                return None
+
+            wait_time = 10 * attempt
+            print(f"⚠️ Ağ hatası. {wait_time} saniye bekleniyor.")
             time.sleep(wait_time)
 
-    raise SystemExit(1)
+    return None
+
+
+def call_groq(prompt, max_retries=3):
+
+    if not GROQ_API_KEY:
+        print("❌ GROQ_API_KEY bulunamadı.")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Sen profesyonel Türkçe tarih ve bilim "
+                    "belgeseli yazarı olarak görev yapıyorsun."
+                )
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 12000
+    }
+
+    for attempt in range(1, max_retries + 1):
+
+        print(f"🟢 Groq isteği {attempt}/{max_retries}")
+
+        try:
+
+            response = requests.post(
+                GROQ_URL,
+                headers=headers,
+                json=payload,
+                timeout=180
+            )
+
+            print("Groq HTTP:", response.status_code)
+
+            if response.ok:
+
+                data = response.json()
+
+                try:
+                    return data["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, TypeError):
+                    print("❌ Groq cevabı beklenen formatta değil.")
+                    return None
+
+            if response.status_code == 429:
+
+                print("⚠️ Groq da 429 verdi.")
+
+                if attempt >= max_retries:
+                    return None
+
+                wait_time = 15 * attempt
+
+                print(
+                    f"⏳ {wait_time} saniye bekleniyor..."
+                )
+
+                time.sleep(wait_time)
+                continue
+
+            if response.status_code in {500, 502, 503, 504}:
+
+                if attempt >= max_retries:
+                    return None
+
+                wait_time = 10 * attempt
+                time.sleep(wait_time)
+                continue
+
+            print("❌ Groq kalıcı hata:")
+            print(response.text[:2000])
+            return None
+
+        except requests.exceptions.Timeout:
+
+            if attempt >= max_retries:
+                print("❌ Groq timeout.")
+                return None
+
+            time.sleep(10 * attempt)
+
+        except requests.exceptions.RequestException as e:
+
+            if attempt >= max_retries:
+                print("❌ Groq ağ hatası:", str(e))
+                return None
+
+            time.sleep(10 * attempt)
+
+    return None
+
+
+def call_ai(prompt):
+
+    # 1. Önce Gemini
+    result = call_gemini(prompt)
+
+    if result:
+        print("✅ İçerik Gemini tarafından üretildi.")
+        return result
+
+    # 2. Gemini başarısızsa Groq
+    print()
+    print("================================")
+    print("⚠️ GEMINI BAŞARISIZ")
+    print("🟢 GROQ YEDEK SİSTEM DEVREDE")
+    print("================================")
+
+    result = call_groq(prompt)
+
+    if result:
+        print("✅ İçerik Groq tarafından üretildi.")
+        return result
+
+    raise SystemExit(
+        "❌ Gemini ve Groq başarısız oldu."
+    )
 
 
 def load_history():
+
     if os.path.exists(TOPIC_HISTORY_FILE):
+
         try:
-            with open(TOPIC_HISTORY_FILE, encoding="utf-8") as f:
+
+            with open(
+                TOPIC_HISTORY_FILE,
+                encoding="utf-8"
+            ) as f:
                 return json.load(f)
+
         except Exception:
             return []
+
     return []
 
 
 def save_history(history):
+
     history = history[-MAX_HISTORY:]
-    with open(TOPIC_HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+
+    with open(
+        TOPIC_HISTORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            history,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 def is_valid_topic(topic):
+
     if not topic:
         return False
+
     if len(topic) < 8 or len(topic) > 220:
         return False
-    if not re.search(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", topic):
+
+    if not re.search(
+        r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}",
+        topic
+    ):
         return False
+
     if len(topic.split()) < 2:
         return False
+
     return True
 
 
 def generate_topic_and_outline(history):
-    avoid_list = "\n".join(f"- {t}" for t in history) if history else "(henüz yok)"
+
+    avoid_list = (
+        "\n".join(f"- {t}" for t in history)
+        if history
+        else "(henüz yok)"
+    )
 
     prompt = f"""
-Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim YouTube
-kanalı için 20-25 DAKİKALIK belgesel formatında uzun video
-hazırlayan bir editör VE senaristsin. Bu tek istekte HEM konuyu
-seçeceksin HEM de o konunun bölüm planını (outline) çıkaracaksın.
+Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim
+YouTube kanalı için yaklaşık 20 dakikalık belgesel
+hazırlayan editör ve senaristsin.
 
-1. ADIM - KONU SEÇ:
-Seçtiğin konu, 20-25 dakikalık orta yoğunlukta bir belgesel
-anlatımını doldurabilecek kadar zengin olmalı. Tek bir küçük
-ilginç bilgi veya kısa bir olay YETERSİZDİR, ama saatlerce
-sürecek dev bir kapsam da GEREKMEZ — odaklı, tek bir olay/kişi/
-dönem/keşfin derinlemesine anlatımı yeterli.
+Bu tek istekte HEM konuyu seç HEM bölüm planını oluştur.
 
-İyi örnekler (kapsam olarak):
-- Bir tarihi kişinin hayatının en önemli dönemi veya en büyük
-  başarısı/dönüm noktası (diktatör/savaş suçlusu olmayan).
-- Bir antik uygarlığın en dikkat çekici tek bir yönü veya olayı.
-- Tek bir büyük tarihi olayın bütün boyutlarıyla anlatımı.
-- Bir bilim dalındaki tek bir büyük keşfin hikâyesi.
-- Çözülmemiş tek bir gizemin incelenmesi.
+SEÇİLEN KONU yaklaşık 20 dakikalık anlatımı doldurabilecek
+kadar zengin olmalı.
 
-KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR SEÇME
-(bunlara çok benzer/aynı konuları da seçme):
+Daha önce kullanılan konular:
 {avoid_list}
 
-2. ADIM - BÖLÜM PLANI ÇIKAR:
-Bu konuyu {BOLUM_SAYISI} büyük bölümde anlatacak bir belgesel
-bölüm planı hazırla. Her bölüm yaklaşık {BOLUM_BASINA_KELIME}
-kelimelik anlatıma denk gelecek şekilde tasarlanmalı, toplamda
-~20-25 dakikalık bir belgesel oluşturmalı.
+Konuyu {BOLUM_SAYISI} bölümde anlat.
+
+Her bölüm yaklaşık {BOLUM_BASINA_KELIME} kelime olsun.
+
+Toplam yaklaşık 3000 kelimelik bir belgesel oluştur.
 
 KURALLAR:
-- 1. bölüm çok güçlü bir açılış/merak unsuru içermeli.
-- Son bölüm konunun insanlık/tarih/bilim açısından önemiyle
-  kapanmalı.
-- Bölümler birbirinin devamı olmalı, konu tekrarı olmamalı.
-- Siyasi propaganda, savaş suçluları, diktatörler, hakaret veya
-  kışkırtıcı içerik ÖNERME.
-- Sadece gerçek, doğrulanabilir bir konu olsun.
+- Güçlü açılış ve merak unsuru kullan.
+- Son bölüm güçlü bir kapanışla bitsin.
+- Konu tekrarı yapma.
+- Gerçek ve doğrulanabilir konu seç.
+- Diktatör veya savaş suçlusu önerme.
+- Propaganda veya kışkırtıcı içerik üretme.
 
-ÇIKTI FORMATI (tam olarak bunu kullan, başka hiçbir açıklama
-ekleme):
+ÇIKTI FORMATI:
 
-KONU: <seçtiğin konu, tek satır>
-BÖLÜM 1: <kısa başlık> - <bu bölümde anlatılacakların 1-2 cümlelik özeti>
-BÖLÜM 2: <kısa başlık> - <özet>
+KONU: <konu>
+BÖLÜM 1: <başlık> - <özet>
+BÖLÜM 2: <başlık> - <özet>
 """
 
-    raw = call_gemini_with_retry(prompt)
+    raw = call_ai(prompt)
 
     topic = ""
     bolumler = []
 
     for line in raw.strip().splitlines():
+
         line = line.strip()
+
         if not line:
             continue
+
         if line.upper().startswith("KONU:"):
             topic = line.split(":", 1)[1].strip()
-        elif line.upper().startswith("BÖLÜM") or line.upper().startswith("BOLUM"):
+
+        elif (
+            line.upper().startswith("BÖLÜM")
+            or line.upper().startswith("BOLUM")
+        ):
             bolumler.append(line)
 
-    topic = re.sub(r"\s+", " ", topic).strip().strip('"').strip()
+    topic = re.sub(
+        r"\s+",
+        " ",
+        topic
+    ).strip().strip('"').strip()
 
     if not bolumler:
-        bolumler = [f"BÖLÜM 1: {topic} - Konunun genel anlatımı"]
+
+        bolumler = [
+            f"BÖLÜM 1: {topic} - Konunun genel anlatımı"
+        ]
 
     return topic, bolumler
 
 
-def generate_chapter(topic, outline_text, chapter_line, chapter_index, total_chapters, previous_tail, need_metadata):
+def generate_chapter(
+    topic,
+    outline_text,
+    chapter_line,
+    chapter_index,
+    total_chapters,
+    previous_tail,
+    need_metadata
+):
+
     devamlilik = ""
 
     if previous_tail:
+
         devamlilik = f"""
-BİR ÖNCEKİ BÖLÜMÜN SON KISMI (buradan doğal şekilde devam et,
-tekrar etme, aynı cümleleri kurma, ama konudan da kopma):
+BİR ÖNCEKİ BÖLÜMÜN SON KISMI:
+
 \"\"\"{previous_tail}\"\"\"
+
+Buradan doğal şekilde devam et.
+Tekrar yapma.
 """
 
     metadata_talimati = ""
+
     if need_metadata:
+
         metadata_talimati = f"""
 
-BU SON BÖLÜM OLDUĞU İÇİN, bölüm metnini yazdıktan SONRA, tam
-olarak şu satırı yaz:
+BU SON BÖLÜM.
+
+Metni bitirdikten sonra:
+
 {METADATA_AYIRICI}
 
-Ardından bu 20-25 dakikalık belgesel video için YouTube
-metadata'sı ekle, tam olarak şu formatta:
-
 BAŞLIK:
-YouTube için merak uyandırıcı ama yanıltıcı olmayan başlık.
+Merak uyandırıcı ama yanıltıcı olmayan YouTube başlığı.
 
 AÇIKLAMA:
-Videonun 3-5 cümlelik açıklaması.
+3-5 cümlelik açıklama.
 
 ETİKETLER:
-Konuya uygun 15-25 Türkçe YouTube etiketi, virgülle ayrılmış.
+15-25 Türkçe etiket, virgülle ayrılmış.
 """
 
     prompt = f"""
-Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı için çalışan
-profesyonel tarih/bilim belgeseli anlatıcısısın.
+Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı için
+profesyonel Türkçe tarih/bilim belgeseli anlatıcısısın.
 
 GENEL KONU:
+
 {topic}
 
-TÜM BÖLÜM PLANI (bağlam için, sadece sen bunu bilirsin,
-izleyiciye bölüm numarası veya başlığı SÖYLEME):
+BÖLÜM PLANI:
+
 {outline_text}
 
-ŞİMDİ YAZACAĞIN BÖLÜM ({chapter_index}/{total_chapters}):
+YAZILACAK BÖLÜM:
+
 {chapter_line}
+
 {devamlilik}
-GÖREV:
-Bu bölüm için yaklaşık {BOLUM_BASINA_KELIME} kelimelik, akıcı,
-kesintisiz belgesel anlatım metni yaz. Bu metin, izleyicinin
-"bölüm" olduğunu fark etmeyeceği şekilde, bir öncekiyle
-kaynaşmış tek bir anlatının parçası gibi olmalı.
+
+Yaklaşık {BOLUM_BASINA_KELIME} kelimelik
+akıcı ve kesintisiz belgesel anlatımı yaz.
+
+İzleyici bunun bir bölüm olduğunu fark etmemeli.
 
 {NARRATION_KURALLARI}
 
-ÇIKTI SADECE BU BÖLÜMÜN SESLENDİRME METNİ OLMALI. Başlık, numara
-veya başka hiçbir şey yazma.
+ÇIKTI SADECE SESLENDİRME METNİ OLMALI.
+
+Başlık, bölüm numarası veya sahne açıklaması yazma.
+
 {metadata_talimati}
 """
 
-    raw = call_gemini_with_retry(prompt)
+    raw = call_ai(prompt)
+
     return raw.strip()
 
 
 def parse_chapter_with_metadata(raw_text):
+
     if METADATA_AYIRICI in raw_text:
-        narration, metadata = raw_text.split(METADATA_AYIRICI, 1)
+
+        narration, metadata = raw_text.split(
+            METADATA_AYIRICI,
+            1
+        )
+
         return narration.strip(), metadata.strip()
+
     return raw_text.strip(), None
 
 
 def default_metadata(topic):
+
     return (
         f"BAŞLIK:\n{topic[:95]}\n\n"
-        f"AÇIKLAMA:\n{topic} hakkında kapsamlı bir belgesel.\n\n"
-        f"ETİKETLER:\ntarih, bilim, belgesel, keşif, bilgi"
+        f"AÇIKLAMA:\n"
+        f"{topic} hakkında kapsamlı bir belgesel.\n\n"
+        f"ETİKETLER:\n"
+        f"tarih, bilim, belgesel, keşif, bilgi"
     )
 
 
 def main():
+
     print("================================")
-    print("🎬 BÖLÜMLÜ BELGESEL SENARYO MOTORU (25 DK, AZALTILMIŞ İSTEK)")
+    print("🎬 20 DAKİKALIK BELGESEL MOTORU")
     print("================================")
-    print(f"Hedef: {BOLUM_SAYISI} bölüm x ~{BOLUM_BASINA_KELIME} kelime "
-          f"(~{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime toplam)")
+
+    print(
+        f"Hedef: {BOLUM_SAYISI} bölüm x "
+        f"{BOLUM_BASINA_KELIME} kelime"
+    )
+
+    print(
+        f"Toplam hedef: "
+        f"{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime"
+    )
+
+    print("Ana AI: Gemini")
+    print("Yedek AI: Groq GPT-OSS 120B")
     print()
 
     history = load_history()
+
     topic = None
     bolumler = None
 
-    print("🧭 1/2 Konu + bölüm planı (TEK istekte) oluşturuluyor...")
+    print(
+        "🧭 Konu + bölüm planı oluşturuluyor..."
+    )
 
-    for attempt in range(4):
+    for attempt in range(2):
+
         try:
-            candidate_topic, candidate_bolumler = generate_topic_and_outline(history)
 
-            if candidate_topic and is_valid_topic(candidate_topic) and candidate_topic not in history:
+            candidate_topic, candidate_bolumler = (
+                generate_topic_and_outline(history)
+            )
+
+            if (
+                candidate_topic
+                and is_valid_topic(candidate_topic)
+                and candidate_topic not in history
+            ):
+
                 topic = candidate_topic
                 bolumler = candidate_bolumler
                 break
 
-            print(f"   ⚠️ Geçersiz/tekrar konu geldi ({candidate_topic!r}), yeniden deneniyor...")
+            print(
+                "⚠️ Geçersiz veya tekrar konu."
+            )
 
         except Exception as e:
-            print("   ⚠️ Konu+plan üretim hatası:", e)
-            time.sleep(5)
+
+            print(
+                "⚠️ Konu üretim hatası:",
+                str(e)
+            )
+
+            if attempt < 1:
+                time.sleep(5)
 
     if not topic:
-        raise SystemExit("❌ Yapay zeka geçerli bir konu+plan üretemedi.")
+
+        raise SystemExit(
+            "❌ Geçerli konu üretilemedi."
+        )
 
     outline_text = "\n".join(bolumler)
 
-    print("🎯 Seçilen konu:", topic)
-    print("Bölüm planı:")
+    print()
+    print("🎯 Konu:", topic)
+
     for b in bolumler:
         print("  -", b)
-    print()
 
     history.append(topic)
     save_history(history)
 
-    os.makedirs(OUT, exist_ok=True)
-    with open(TOPIC_FILE, "w", encoding="utf-8") as f:
+    os.makedirs(
+        OUT,
+        exist_ok=True
+    )
+
+    with open(
+        TOPIC_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
         f.write(topic)
 
-    print("✍️ 2/2 Bölümler tek tek yazılıyor (son bölümde metadata da üretilecek)...")
+    print()
+    print("✍️ Bölümler yazılıyor...")
 
     script_parts = []
     previous_tail = None
@@ -350,44 +634,88 @@ def main():
 
     total = len(bolumler)
 
-    for idx, chapter_line in enumerate(bolumler, 1):
-        is_last = (idx == total)
+    for idx, chapter_line in enumerate(
+        bolumler,
+        1
+    ):
 
-        print(f"   📝 Bölüm {idx}/{total} yazılıyor: {chapter_line[:70]}")
+        is_last = idx == total
+
+        print(
+            f"📝 Bölüm {idx}/{total}"
+        )
 
         raw = generate_chapter(
-            topic, outline_text, chapter_line, idx, total, previous_tail,
+            topic,
+            outline_text,
+            chapter_line,
+            idx,
+            total,
+            previous_tail,
             need_metadata=is_last
         )
 
-        chapter_text, maybe_metadata = parse_chapter_with_metadata(raw)
+        chapter_text, maybe_metadata = (
+            parse_chapter_with_metadata(raw)
+        )
 
         if not chapter_text:
-            print(f"   ⚠️ Bölüm {idx} boş geldi, atlanıyor.")
+
+            print(
+                f"⚠️ Bölüm {idx} boş geldi."
+            )
+
             continue
 
-        script_parts.append(chapter_text)
-        previous_tail = chapter_text[-500:]
+        script_parts.append(
+            chapter_text
+        )
+
+        previous_tail = (
+            chapter_text[-500:]
+        )
 
         if is_last:
             metadata_raw = maybe_metadata
 
-        kelime = len(chapter_text.split())
-        print(f"   ✅ Bölüm {idx} tamam - {kelime} kelime")
+        print(
+            f"✅ Bölüm {idx}: "
+            f"{len(chapter_text.split())} kelime"
+        )
 
     if not script_parts:
-        raise SystemExit("❌ Hiçbir bölüm üretilemedi.")
 
-    full_script = "\n\n".join(script_parts)
+        raise SystemExit(
+            "❌ Hiçbir bölüm üretilemedi."
+        )
 
-    toplam_kelime = len(full_script.split())
+    full_script = "\n\n".join(
+        script_parts
+    )
+
+    toplam_kelime = len(
+        full_script.split()
+    )
+
+    tahmini_dakika = round(
+        toplam_kelime / 150
+    )
+
     print()
-    print(f"📊 Toplam senaryo: {toplam_kelime} kelime (~{round(toplam_kelime/150)} dakika tahmini)")
+    print(
+        f"📊 Toplam: {toplam_kelime} kelime"
+    )
+
+    print(
+        f"⏱️ Tahmini süre: "
+        f"{tahmini_dakika} dakika"
+    )
 
     if not metadata_raw:
-        print("⚠️ Metadata son bölümle birlikte gelmedi, varsayılan metadata kullanılıyor "
-              "(ekstra Gemini isteği yapılmıyor).")
-        metadata_raw = default_metadata(topic)
+
+        metadata_raw = default_metadata(
+            topic
+        )
 
     final_text = (
         "=== SESLENDİRME METNİ ===\n"
@@ -396,21 +724,21 @@ def main():
         + metadata_raw
     )
 
-    if not final_text.strip():
-        print("❌ İçerik boş oluştu.")
-        raise SystemExit(1)
+    with open(
+        OUTPUT_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(final_text)
 
     print()
     print("================================")
-    print(f"✅ İÇERİK OLUŞTURULDU (bu videoda {1 + total} Gemini isteği kullanıldı)")
+    print("✅ İÇERİK OLUŞTURULDU")
     print("================================")
     print("Konu:", topic)
-    print("Dosya:", OUTPUT_FILE)
     print("Toplam kelime:", toplam_kelime)
-    print("Karakter:", len(final_text))
+    print("Tahmini dakika:", tahmini_dakika)
     print("================================")
 
 
