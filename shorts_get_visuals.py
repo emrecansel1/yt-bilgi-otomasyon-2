@@ -11,6 +11,10 @@ DURATIONS_FILE = os.path.join(OUT, "shorts_scene_durations.json")
 MANIFEST = os.path.join(OUT, "shorts_visual_manifest.json")
 TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
 
+REPO_BASE = os.path.dirname(os.path.abspath(__file__))
+USED_VISUALS_FILE = os.path.join(REPO_BASE, "shorts_used_visuals.json")
+MAX_USED = 3000
+
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
@@ -30,6 +34,30 @@ GENERIC_FALLBACK_QUERIES_EN = [
     "dramatic sky abstract",
     "old book library",
 ]
+
+
+def load_used_visuals():
+    if os.path.exists(USED_VISUALS_FILE):
+        try:
+            with open(USED_VISUALS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data.get("urls", [])), set(data.get("hashes", []))
+        except Exception:
+            return set(), set()
+    return set(), set()
+
+
+def save_used_visuals(used_urls, used_hashes):
+    urls_list = list(used_urls)[-MAX_USED:]
+    hashes_list = list(used_hashes)[-MAX_USED:]
+
+    with open(USED_VISUALS_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            {"urls": urls_list, "hashes": hashes_list},
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 def get_topic():
@@ -257,8 +285,10 @@ def main():
                 pass
 
     manifest = []
-    used_urls = set()
-    used_hashes = set()
+
+    # Geçmiş run'lardan gelen kalıcı liste + bu run'a özel liste birleşiyor
+    used_urls, used_hashes = load_used_visuals()
+
     success = 0
     last_good_path = None
 
@@ -344,11 +374,15 @@ def main():
     with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
+    # Kalıcı görsel geçmişini bir sonraki run için repo'ya kaydet
+    save_used_visuals(used_urls, used_hashes)
+
     print("================================")
     print("✅ SHORTS GÖRSEL ARAMA BİTTİ")
     print("================================")
     print(f"Benzersiz görsel: {success} / {len(scenes)}")
     print(f"Toplam manifest kaydı: {len(manifest)} (sahne sayısıyla birebir aynı)")
+    print(f"Kalıcı görsel geçmişi: {len(used_urls)} url / {len(used_hashes)} hash")
     print("Manifest:", MANIFEST)
 
 
