@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -12,6 +13,23 @@ VIDEO = os.path.join(OUT, "shorts_final.mp4")
 META_FILE = os.path.join(OUT, "shorts_meta.json")
 CONFIG = "config.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+# Açıklamaya #Shorts ile birlikte eklenecek sabit hashtag havuzu.
+# Her yüklemede havuzdan rastgele birkaç tanesi seçilir, hep aynısı olmasın diye.
+EK_HASHTAG_HAVUZU = [
+    "#tarih",
+    "#bilim",
+    "#tarihçi",
+    "#bilinmeyenler",
+    "#keşif",
+    "#bilgi",
+    "#gizemliolaylar",
+    "#dünyatarihi",
+    "#ilginçbilgiler",
+    "#arkeoloji",
+]
+
+EK_HASHTAG_SAYISI = 3
 
 
 def load_config():
@@ -34,6 +52,14 @@ def load_meta():
             return json.load(f)
     except Exception:
         return {}
+
+
+def secili_ek_hashtagler():
+    secim = random.sample(
+        EK_HASHTAG_HAVUZU,
+        min(EK_HASHTAG_SAYISI, len(EK_HASHTAG_HAVUZU))
+    )
+    return " ".join(secim)
 
 
 def upload():
@@ -85,8 +111,12 @@ def upload():
     if not description:
         description = "Bilim, tarih ve dünyadan ilginç bilgiler."
 
+    ek_hashtagler = secili_ek_hashtagler()
+
     if "#shorts" not in description.lower():
-        description = description + "\n\n#Shorts"
+        description = description + "\n\n#Shorts " + ek_hashtagler
+    else:
+        description = description + "\n\n" + ek_hashtagler
 
     raw_tags = meta.get("tags", "")
 
