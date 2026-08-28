@@ -1,5 +1,8 @@
 name: YouTube Otomatik Shorts
 
+permissions:
+  contents: write
+
 on:
   schedule:
    - cron: '15 * * * *'
@@ -104,3 +107,13 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python auto_shorts.py
+
+      - name: Geçmiş dosyalarını commit'le
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add shorts_topic_history.json shorts_used_visuals.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "Otomatik: konu/görsel geçmişi güncellendi"
+          git pull --rebase
+          git push
