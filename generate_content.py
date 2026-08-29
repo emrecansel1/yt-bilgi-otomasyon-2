@@ -58,6 +58,33 @@ BOLUM_BASINA_KELIME = 1100
 METADATA_AYIRICI = "===METADATA_AYIRICI==="
 
 # =========================================================
+# NİŞ: DRAMATİK BİLİM İNSANI HİKAYELERİ
+# =========================================================
+
+ORNEK_KONULAR = """
+- Semmelweis'in el yıkama önerisi yüzünden tımarhaneye kapatılması
+- Nikola Tesla'nın sefalet içinde otel odasında ölümü
+- Alan Turing'in savaşı kazandırıp sonra devlet tarafından yok edilmesi
+- Rosalind Franklin'in DNA keşfindeki payının çalınması
+- Marie Curie'nin kendi keşfettiği radyasyondan ölümü
+- Ludwig Boltzmann'ın bilim camiası tarafından dışlanıp intihar etmesi
+- Barbara McClintock'un keşfinin 30 yıl sonra kabul edilmesi
+- Galileo'nun kilise tarafından yargılanıp susturulması
+- Giordano Bruno'nun fikirleri yüzünden diri diri yakılması
+- Évariste Galois'nın 20 yaşında düelloda ölmesi
+- Vera Rubin'in karanlık madde keşfinin yıllarca göz ardı edilmesi
+- Jocelyn Bell Burnell'in pulsar keşfinde göz ardı edilmesi
+- Rosalind Franklin'in erken yaşta kanserden ölmesi
+- Emmy Noether'in kadın olduğu için üniversitede maaş alamaması
+- Ada Lovelace'in ilk programcı olarak tanınmadan ölmesi
+- Katherine Johnson'un ırkçılığa rağmen NASA'da yükselmesi
+- Srinivasa Ramanujan'ın İngiltere'de yalnızlıktan hastalanması
+- Kurt Gödel'in paranoyadan açlıktan ölmesi
+- John Nash'in şizofreniyle mücadelesi
+- Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
+"""
+
+# =========================================================
 # ANLATIM KURALLARI
 # =========================================================
 
@@ -454,10 +481,26 @@ Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim
 YouTube kanalı için yaklaşık 15 dakikalık belgesel
 hazırlayan editör ve senaristsin.
 
+KANALIN NİŞİ:
+
+Kanal artık SADECE bilim insanlarının, mucitlerin ve
+kaşiflerin İNSANİ VE DRAMATİK HİKAYELERİNE odaklanıyor.
+Kuru bilgi anlatımı değil; bir bilim insanının yaşadığı
+haksızlık, trajedi, mücadele, görmezden gelinme, ölüm,
+yalnızlık veya geç kabul görme hikayesi anlatılacak.
+
+Amaç izleyicide GERÇEK BİR DUYGUSAL BAĞ kurmak: üzüntü,
+hayranlık, öfke (haksızlığa karşı) veya ilham.
+
+ÖRNEK KONU TARZLARI (birebir kopyalama, ilham al,
+farklı isimler/olaylar sec):
+{ORNEK_KONULAR}
+
 Bu tek istekte HEM konuyu seç HEM bölüm planını oluştur.
 
 SEÇİLEN KONU yaklaşık 15 dakikalık anlatımı doldurabilecek
-kadar zengin olmalı.
+kadar zengin olmalı VE yukarıdaki nişe (dramatik bilim
+insanı hikayesi) birebir uymalı.
 
 Daha önce kullanılan konular:
 {avoid_list}
@@ -472,11 +515,16 @@ kelimelik bir belgesel oluştur.
 
 KURALLAR:
 - Güçlü açılış ve merak unsuru kullan.
-- Son bölüm güçlü bir kapanışla bitsin.
+- Anlatım boyunca kişinin insani tarafını (korkuları,
+  umutları, çektiği acı) hissettir.
+- Son bölüm güçlü, duygusal bir kapanışla bitsin.
 - Konu tekrarı yapma.
 - Gerçek ve doğrulanabilir konu seç.
 - Diktatör veya savaş suçlusu önerme.
 - Propaganda veya kışkırtıcı içerik üretme.
+- Sadece bilim insanı/mucit/kaşif hikayesi seç, başka
+  konu türüne (savaş tarihi, genel merak, günlük eşyalar
+  vb.) kayma.
 
 ÇIKTI FORMATI:
 
@@ -581,6 +629,12 @@ ETİKETLER:
     prompt = f"""
 Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı için
 profesyonel Türkçe tarih/bilim belgeseli anlatıcısısın.
+
+Kanalın nişi: bilim insanlarının/mucitlerin/kaşiflerin
+insani ve dramatik hikayeleri. Anlatımda kişinin
+duygusal/insani tarafını (mücadele, haksızlık, acı,
+zafer) hissettir, sadece kuru olay/tarih sıralaması
+yapma.
 
 GENEL KONU:
 
@@ -837,64 +891,4 @@ def main():
     )
 
     toplam_kelime = len(
-        full_script.split()
-    )
-
-    tahmini_dakika = round(
-        toplam_kelime / 150
-    )
-
-    print()
-
-    print(
-        f"📊 Toplam: "
-        f"{toplam_kelime} kelime"
-    )
-
-    print(
-        f"⏱️ Tahmini süre: "
-        f"{tahmini_dakika} dakika"
-    )
-
-    if not metadata_raw:
-
-        metadata_raw = default_metadata(
-            topic
-        )
-
-    final_text = (
-        "=== SESLENDİRME METNİ ===\n"
-        + full_script
-        + "\n\n=== METADATA ===\n"
-        + metadata_raw
-    )
-
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(final_text)
-
-    print()
-    print("================================")
-    print("✅ İÇERİK OLUŞTURULDU")
-    print("================================")
-    print(
-        "Konu:",
-        topic
-    )
-    print(
-        "Toplam kelime:",
-        toplam_kelime
-    )
-    print(
-        "Tahmini dakika:",
-        tahmini_dakika
-    )
-    print("================================")
-
-
-if __name__ == "__main__":
-    main()
+       
