@@ -19,6 +19,28 @@ if not API_KEY:
 
 MAX_HISTORY = 60
 
+ORNEK_KONULAR = """
+- Semmelweis'in el yıkama önerisi yüzünden tımarhaneye kapatılması
+- Nikola Tesla'nın sefalet içinde otel odasında ölümü
+- Alan Turing'in savaşı kazandırıp sonra devlet tarafından yok edilmesi
+- Rosalind Franklin'in DNA keşfindeki payının çalınması
+- Marie Curie'nin kendi keşfettiği radyasyondan ölümü
+- Ludwig Boltzmann'ın bilim camiası tarafından dışlanıp intihar etmesi
+- Barbara McClintock'un keşfinin 30 yıl sonra kabul edilmesi
+- Galileo'nun kilise tarafından yargılanıp susturulması
+- Giordano Bruno'nun fikirleri yüzünden diri diri yakılması
+- Évariste Galois'nın 20 yaşında düelloda ölmesi
+- Vera Rubin'in karanlık madde keşfinin yıllarca göz ardı edilmesi
+- Jocelyn Bell Burnell'in pulsar keşfinde göz ardı edilmesi
+- Emmy Noether'in kadın olduğu için üniversitede maaş alamaması
+- Ada Lovelace'in ilk programcı olarak tanınmadan ölmesi
+- Katherine Johnson'un ırkçılığa rağmen NASA'da yükselmesi
+- Srinivasa Ramanujan'ın İngiltere'de yalnızlıktan hastalanması
+- Kurt Gödel'in paranoyadan açlıktan ölmesi
+- John Nash'in şizofreniyle mücadelesi
+- Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
+"""
+
 
 def clean_text(text):
     text = re.sub(r"\[[^\]]*\]", "", text or "")
@@ -102,12 +124,28 @@ Shorts konu bulan VE içerik yazan editörüsün. Bu tek istekte
 HEM konuyu seçeceksin HEM de o konu için Shorts metnini
 yazacaksın.
 
+KANALIN NİŞİ:
+
+Kanal artık SADECE bilim insanlarının, mucitlerin ve
+kaşiflerin İNSANİ VE DRAMATİK HİKAYELERİNE odaklanıyor.
+Kuru bilgi anlatımı değil; bir bilim insanının yaşadığı
+haksızlık, trajedi, mücadele, görmezden gelinme, ölüm,
+yalnızlık veya geç kabul görme hikayesi anlatılacak.
+
+Amaç izleyicide GERÇEK BİR DUYGUSAL BAĞ kurmak: üzüntü,
+hayranlık, öfke (haksızlığa karşı) veya ilham.
+
+ÖRNEK KONU TARZLARI (birebir kopyalama, ilham al,
+farklı isimler/olaylar sec):
+{ORNEK_KONULAR}
+
 1. ADIM - KONU SEÇ:
 İzleyicinin "vay be, bunu bilmiyordum" diyeceği, çarpıcı,
-meraklandırıcı, GERÇEK ve DOĞRULANABİLİR TEK BİR konu seç.
-Konu; tarih, bilim, icatlar, keşifler, gizemli olaylar, insan
-vücudu, uzay, hayvanlar, eski uygarlıklar, teknoloji tarihi
-gibi alanlardan olabilir.
+meraklandırıcı, GERÇEK ve DOĞRULANABİLİR TEK BİR bilim
+insanı/mucit/kaşif hikayesi seç. Konu MUTLAKA yukarıdaki
+nişe (dramatik bilim insanı hikayesi) uymalı. Genel tarih,
+uzay, hayvanlar, günlük eşyalar gibi başka konu türlerine
+kayma.
 
 KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR SEÇME
 (bunlara çok benzer/aynı konuları da seçme):
@@ -121,6 +159,8 @@ oluştur.
 AMAÇ:
 İzleyicinin daha ilk cümlede durup videoyu izlemeye devam
 etmesini sağlamak. İzleyici hiçbir anda sıkılıp kaydırmamalı.
+Metin boyunca kişinin insani tarafını (korku, umut, acı,
+haksızlık, zafer) hissettir.
 
 ÇOK ÖNEMLİ:
 - Bilgi uydurma, tarihi ve bilimsel gerçeklere sadık kal.
