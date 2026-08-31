@@ -890,5 +890,4 @@ def main():
         script_parts
     )
 
-    toplam_kelime = len(
-       
+    toplam_kelime = len(full_scr
