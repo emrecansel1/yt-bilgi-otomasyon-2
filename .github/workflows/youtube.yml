@@ -211,6 +211,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -eu
 
@@ -226,13 +227,21 @@ jobs:
             echo "✅ CEREBRAS_API_KEY mevcut."
           fi
 
+          if [ -z "$NVIDIA_API_KEY" ]; then
+            echo "⚠️ NVIDIA_API_KEY bulunamadi."
+          else
+            echo "✅ NVIDIA_API_KEY mevcut."
+          fi
+
       - name: Video oluştur ve yükle
         shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          UNSPLASH_API_KEY: ${{ secrets.UNSPLASH_API_KEY }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -e
