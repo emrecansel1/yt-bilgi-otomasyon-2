@@ -1,5 +1,8 @@
 import os
+import subprocess
+import sys
 import json
+from datetime import datetime
 import requests
 import re
 import time
@@ -51,8 +54,8 @@ CEREBRAS_MODEL = "llama-3.3-70b"
 
 MAX_HISTORY = 30
 
-# Yaklaşık 15 dakikalık video
-BOLUM_SAYISI = 2
+# 30-45 dakikalık video hedefi
+BOLUM_SAYISI = 5
 BOLUM_BASINA_KELIME = 1100
 
 METADATA_AYIRICI = "===METADATA_AYIRICI==="
@@ -360,7 +363,6 @@ def call_cerebras(prompt, max_retries=2):
 
 def call_ai(prompt):
 
-    # Önce Gemini
     if GEMINI_API_KEY:
 
         result = call_gemini(prompt)
@@ -373,7 +375,6 @@ def call_ai(prompt):
 
             return result
 
-    # Gemini başarısızsa Cerebras
     print()
     print("================================")
     print("⚠️ GEMINI BAŞARISIZ")
@@ -478,7 +479,7 @@ def generate_topic_and_outline(history):
 
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi/tarih/bilim
-YouTube kanalı için yaklaşık 15 dakikalık belgesel
+YouTube kanalı için yaklaşık 30-45 dakikalık belgesel
 hazırlayan editör ve senaristsin.
 
 KANALIN NİŞİ:
@@ -498,7 +499,7 @@ farklı isimler/olaylar sec):
 
 Bu tek istekte HEM konuyu seç HEM bölüm planını oluştur.
 
-SEÇİLEN KONU yaklaşık 15 dakikalık anlatımı doldurabilecek
+SEÇİLEN KONU yaklaşık 30-45 dakikalık anlatımı doldurabilecek
 kadar zengin olmalı VE yukarıdaki nişe (dramatik bilim
 insanı hikayesi) birebir uymalı.
 
@@ -716,7 +717,7 @@ def default_metadata(topic):
 def main():
 
     print("================================")
-    print("🎬 15 DAKİKALIK BELGESEL MOTORU")
+    print("🎬 30-45 DAKİKALIK BELGESEL MOTORU")
     print("================================")
 
     print(
@@ -890,4 +891,4 @@ def main():
         script_parts
     )
 
-    toplam_kelime = len(full_scr
+    toplam_keli
