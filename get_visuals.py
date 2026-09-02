@@ -4,6 +4,7 @@ import json
 import time
 import requests
 import hashlib
+import urllib.parse
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -14,16 +15,19 @@ MANIFEST = os.path.join(OUT, "visual_manifest.json")
 
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 USED_VISUALS_FILE = os.path.join(REPO_BASE, "video_used_visuals.json")
-MAX_USED = 5000
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
+
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"
 
 WORDS_PER_SCENE = 130
 
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
-session.headers.update({"User-Agent": "YTBilgiUzun/9.0"})
+session.headers.update({"User-Agent": "YTBilgiUzun/11.0"})
 
 GENERIC_FALLBACK_QUERIES_EN = [
     "old vintage photo history",
@@ -51,9 +55,11 @@ def load_used_visuals():
 
 
 def save_used_visuals(used_urls, used_hashes):
+    # Asla kısaltma yapılmıyor - hiçbir görsel asla tekrar kullanılmasın diye
+    # tüm geçmiş sonsuza kadar saklanıyor.
     with open(USED_VISUALS_FILE, "w", encoding="utf-8") as f:
         json.dump(
-            {"urls": list(used_urls)[-MAX_USED:], "hashes": list(used_hashes)[-MAX_USED:]},
+            {"urls": list(used_urls), "hashes": list(used_hashes)},
             f, ensure_ascii=False, indent=2
         )
 
@@ -166,6 +172,49 @@ def call_gemini_with_retry(prompt, max_retries=3, timeout=60):
     return None
 
 
+def call_nvidia_with_retry(prompt, max_retries=2, timeout=60):
+    if not NVIDIA_API_KEY:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": NVIDIA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.5,
+        "max_tokens": 2048
+    }
+
+    delay = 3
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = session.post(
+                NVIDIA_URL,
+                headers=headers,
+                json=payload,
+                timeout=timeout
+            )
+
+            if response.status_code in (429, 503):
+                time.sleep(delay)
+                delay = min(delay * 2, 20)
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+
+        except Exception:
+            time.sleep(delay)
+            delay = min(delay * 2, 20)
+
+    return None
+
+
 def generate_visual_queries_batch(scenes, topic):
     numbered = "\n".join(f"{i}: {s[:180]}" for i, s in enumerate(scenes, 1))
 
@@ -195,6 +244,10 @@ KURALLAR:
 """
 
     raw = call_gemini_with_retry(prompt, max_retries=3, timeout=90)
+
+    if not raw:
+        print("⚠️ Gemini başarısız, NVIDIA ile deneniyor...")
+        raw = call_nvidia_with_retry(prompt, max_retries=2, timeout=90)
 
     if not raw:
         return [None] * len(scenes)
@@ -297,6 +350,69 @@ def wikimedia_search(query):
         return []
 
 
+def openverse_search(query):
+    url = "https://api.openverse.org/v1/images/"
+    params = {"q": query, "page_size": 30, "license_type": "commercial,modification"}
+    try:
+        r = session.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        results = []
+        for item in data.get("results", []):
+            image = item.get("url") or item.get("thumbnail")
+            if image:
+                results.append(image)
+        return results
+    except Exception as e:
+        print("      Openverse hata:", e)
+        return []
+
+
+def unsplash_search(query):
+    key = os.environ.get("UNSPLASH_API_KEY")
+    if not key:
+        return []
+    url = "https://api.unsplash.com/search/photos"
+    headers = {"Authorization": f"Client-ID {key}"}
+    params = {"query": query, "per_page": 30, "orientation": "landscape"}
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=30)
+        if r.status_code == 403:
+            print("      Unsplash kota doldu (saatlik limit), atlanıyor.")
+            return []
+        r.raise_for_status()
+        data = r.json()
+        results = []
+        for photo in data.get("results", []):
+            urls = photo.get("urls", {})
+            image = urls.get("regular") or urls.get("full")
+            if image:
+                results.append(image)
+        return results
+    except Exception as e:
+        print("      Unsplash hata:", e)
+        return []
+
+
+def pollinations_generate(prompt):
+    safe_prompt = urllib.parse.quote(
+        f"{prompt}, cinematic documentary photo, realistic, high detail"
+    )
+    seed = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest(), 16) % 1000000
+    url = f"https://image.pollinations.ai/prompt/{safe_prompt}"
+    params = {"width": 1920, "height": 1080, "nologo": "true", "seed": seed}
+    try:
+        r = session.get(url, params=params, timeout=90)
+        r.raise_for_status()
+        ctype = r.headers.get("content-type", "").lower()
+        if not ctype.startswith("image/"):
+            return None
+        return r.content
+    except Exception as e:
+        print("      Pollinations hata:", e)
+        return None
+
+
 def download_image(url, path):
     try:
         r = session.get(url, timeout=40, stream=True)
@@ -308,6 +424,24 @@ def download_image(url, path):
             for chunk in r.iter_content(65536):
                 if chunk:
                     f.write(chunk)
+        if not os.path.exists(path) or os.path.getsize(path) < 10000:
+            if os.path.exists(path):
+                os.remove(path)
+            return False
+        return True
+    except Exception:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except:
+            pass
+        return False
+
+
+def save_bytes_as_image(content_bytes, path):
+    try:
+        with open(path, "wb") as f:
+            f.write(content_bytes)
         if not os.path.exists(path) or os.path.getsize(path) < 10000:
             if os.path.exists(path):
                 os.remove(path)
@@ -363,7 +497,7 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
 
 def main():
     print("================================")
-    print("🧠 UZUN VİDEO GÖRSEL MOTORU (SADECE RESİM, TOPLU AKILLI SORGU)")
+    print("🧠 UZUN VİDEO GÖRSEL MOTORU (SADECE RESİM, HİÇ TEKRAR YOK)")
     print("================================")
 
     topic = get_topic()
@@ -390,7 +524,7 @@ def main():
     manifest = []
     used_urls, used_hashes = load_used_visuals()
     success = 0
-    last_good_path = None
+    ai_generated_count = 0
 
     for i, scene in enumerate(scenes, 1):
         print(f"[{i}/{len(scenes)}]")
@@ -408,10 +542,14 @@ def main():
             sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query))
             sources.append(("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query))
             sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query))
+            sources.append(("Openverse (akıllı sorgu)", openverse_search, smart_query))
+            sources.append(("Unsplash (akıllı sorgu)", unsplash_search, smart_query))
 
         sources.append(("Pexels Foto (genel)", pexels_search, fallback_query))
         sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query))
         sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query))
+        sources.append(("Openverse (genel)", openverse_search, fallback_query))
+        sources.append(("Unsplash (genel)", unsplash_search, fallback_query))
 
         selected, selected_source, url, h = try_sources(sources, used_urls, used_hashes, success, VISUALS)
 
@@ -420,18 +558,30 @@ def main():
             for q in GENERIC_FALLBACK_QUERIES_EN:
                 generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q))
                 generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q))
+                generic_sources.append(("Openverse (genel havuz)", openverse_search, q))
             selected, selected_source, url, h = try_sources(generic_sources, used_urls, used_hashes, success, VISUALS)
 
-        if not selected and last_good_path:
-            selected = last_good_path
-            selected_source = "Tekrar kullanılan sahne (hiçbir kaynak bulunamadı)"
-            print("   ♻️ Hiçbir yeni içerik bulunamadı, bir önceki sahne kullanılıyor.")
-        elif selected:
+        if not selected:
+            print("   🤖 Hiçbir stok kaynak bulunamadı, AI ile görsel üretiliyor...")
+            ai_prompt = smart_query or fallback_query
+            content_bytes = pollinations_generate(ai_prompt)
+
+            if content_bytes:
+                filename = f"visual_{success + 1:03d}.jpg"
+                path = os.path.join(VISUALS, filename)
+                if save_bytes_as_image(content_bytes, path):
+                    h = file_hash(path)
+                    if h not in used_hashes:
+                        selected = path
+                        selected_source = "Pollinations AI (üretildi)"
+                        url = f"ai-generated:{h}"
+                        ai_generated_count += 1
+
+        if selected:
             used_urls.add(url)
             if h:
                 used_hashes.add(h)
             success += 1
-            last_good_path = selected
 
         manifest.append({
             "scene": i,
@@ -445,22 +595,10 @@ def main():
         if selected:
             print(f"   ✅ [image] {selected_source}")
         else:
-            print("   ⚠️ Hiç içerik bulunamadı.")
+            print("   ⚠️ Hiç içerik bulunamadı (AI üretimi de başarısız).")
 
         print()
         time.sleep(0.2)
-
-    fallback = None
-    for item in manifest:
-        if item["file"]:
-            fallback = item["file"]
-            break
-
-    for item in manifest:
-        if not item["file"] and fallback:
-            item["file"] = fallback
-            item["type"] = "image"
-            item["source"] = "Geriye doğru doldurulan sahne"
 
     with open(MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
@@ -471,6 +609,7 @@ def main():
     print("✅ GÖRSEL ARAMA BİTTİ")
     print("================================")
     print(f"Benzersiz içerik: {success} / {len(scenes)}")
+    print(f"AI ile üretilen: {ai_generated_count}")
     print("Manifest:", MANIFEST)
 
 
