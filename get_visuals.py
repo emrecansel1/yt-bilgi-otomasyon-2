@@ -18,12 +18,12 @@ MAX_USED = 5000
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-WORDS_PER_SCENE = 220
+WORDS_PER_SCENE = 130
 
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
-session.headers.update({"User-Agent": "YTBilgiUzun/8.0"})
+session.headers.update({"User-Agent": "YTBilgiUzun/9.0"})
 
 GENERIC_FALLBACK_QUERIES_EN = [
     "old vintage photo history",
@@ -174,7 +174,7 @@ Konu: {topic}
 
 Aşağıda numaralandırılmış {len(scenes)} adet Türkçe belgesel
 metni parçası var. Her parça için, o parçanın anlattığı
-olayı/nesneyi/yeri/kişiyi/dönemi stok video/fotoğraf sitesinde
+olayı/nesneyi/yeri/kişiyi/dönemi stok fotoğraf sitesinde
 aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
 İngilizce arama sorgusu yaz.
 
@@ -229,33 +229,6 @@ def make_fallback_query(topic, scene):
     return en[:180]
 
 
-def pexels_video_search(query):
-    key = os.environ.get("PEXELS_API_KEY")
-    if not key:
-        return []
-    url = "https://api.pexels.com/videos/search"
-    headers = {"Authorization": key}
-    params = {"query": query, "per_page": 15, "orientation": "landscape"}
-    try:
-        r = session.get(url, headers=headers, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        results = []
-        for video in data.get("videos", []):
-            files = video.get("video_files", [])
-            landscape_files = [f for f in files if (f.get("width") or 0) > (f.get("height") or 0)]
-            candidates = landscape_files if landscape_files else files
-            candidates = sorted(candidates, key=lambda f: abs((f.get("width") or 0) - 1280))
-            if candidates:
-                link = candidates[0].get("link")
-                if link:
-                    results.append(link)
-        return results
-    except Exception as e:
-        print("      Pexels video hata:", e)
-        return []
-
-
 def pexels_search(query):
     key = os.environ.get("PEXELS_API_KEY")
     if not key:
@@ -276,28 +249,6 @@ def pexels_search(query):
         return results
     except Exception as e:
         print("      Pexels hata:", e)
-        return []
-
-
-def pixabay_video_search(query):
-    key = os.environ.get("PIXABAY_API_KEY")
-    if not key:
-        return []
-    url = "https://pixabay.com/api/videos/"
-    params = {"key": key, "q": query, "per_page": 20, "safesearch": "true"}
-    try:
-        r = session.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        results = []
-        for hit in data.get("hits", []):
-            videos = hit.get("videos", {})
-            candidate = videos.get("large") or videos.get("medium") or videos.get("small") or videos.get("tiny")
-            if candidate and candidate.get("url"):
-                results.append(candidate["url"])
-        return results
-    except Exception as e:
-        print("      Pixabay video hata:", e)
         return []
 
 
@@ -371,31 +322,6 @@ def download_image(url, path):
         return False
 
 
-def download_video(url, path):
-    try:
-        r = session.get(url, timeout=90, stream=True)
-        r.raise_for_status()
-        ctype = r.headers.get("content-type", "").lower()
-        if not ctype.startswith("video/"):
-            return False
-        with open(path, "wb") as f:
-            for chunk in r.iter_content(65536):
-                if chunk:
-                    f.write(chunk)
-        if not os.path.exists(path) or os.path.getsize(path) < 200000:
-            if os.path.exists(path):
-                os.remove(path)
-            return False
-        return True
-    except Exception:
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except:
-            pass
-        return False
-
-
 def file_hash(path):
     try:
         h = hashlib.sha256()
@@ -411,7 +337,7 @@ def file_hash(path):
 
 
 def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
-    for source_name, search, query, kind in sources:
+    for source_name, search, query in sources:
         if not query:
             continue
         print("   🔎", source_name, "-", query[:60])
@@ -419,10 +345,9 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
         for url in urls:
             if not url or url in used_urls:
                 continue
-            ext = "mp4" if kind == "video" else "jpg"
-            filename = f"visual_{success + 1:03d}.{ext}"
+            filename = f"visual_{success + 1:03d}.jpg"
             path = os.path.join(visuals_dir, filename)
-            ok = download_video(url, path) if kind == "video" else download_image(url, path)
+            ok = download_image(url, path)
             if not ok:
                 continue
             h = file_hash(path)
@@ -432,13 +357,13 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
                 except:
                     pass
                 continue
-            return path, source_name, url, h, kind
-    return None, None, None, None, None
+            return path, source_name, url, h
+    return None, None, None, None
 
 
 def main():
     print("================================")
-    print("🧠 UZUN VİDEO GÖRSEL/VİDEO MOTORU (TOPLU AKILLI SORGU)")
+    print("🧠 UZUN VİDEO GÖRSEL MOTORU (SADECE RESİM, TOPLU AKILLI SORGU)")
     print("================================")
 
     topic = get_topic()
@@ -466,7 +391,6 @@ def main():
     used_urls, used_hashes = load_used_visuals()
     success = 0
     last_good_path = None
-    last_good_kind = "image"
 
     for i, scene in enumerate(scenes, 1):
         print(f"[{i}/{len(scenes)}]")
@@ -481,33 +405,25 @@ def main():
         sources = []
 
         if smart_query:
-            sources.append(("Pexels Video (akıllı sorgu)", pexels_video_search, smart_query, "video"))
-            sources.append(("Pixabay Video (akıllı sorgu)", pixabay_video_search, smart_query, "video"))
+            sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query))
+            sources.append(("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query))
+            sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query))
 
-        sources.append(("Pexels Video (genel)", pexels_video_search, fallback_query, "video"))
-        sources.append(("Pixabay Video (genel)", pixabay_video_search, fallback_query, "video"))
+        sources.append(("Pexels Foto (genel)", pexels_search, fallback_query))
+        sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query))
+        sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query))
 
-        if smart_query:
-            sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query, "image"))
-            sources.append(("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query, "image"))
-            sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query, "image"))
-
-        sources.append(("Pexels Foto (genel)", pexels_search, fallback_query, "image"))
-        sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query, "image"))
-        sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query, "image"))
-
-        selected, selected_source, url, h, kind = try_sources(sources, used_urls, used_hashes, success, VISUALS)
+        selected, selected_source, url, h = try_sources(sources, used_urls, used_hashes, success, VISUALS)
 
         if not selected:
             generic_sources = []
             for q in GENERIC_FALLBACK_QUERIES_EN:
-                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image"))
-                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image"))
-            selected, selected_source, url, h, kind = try_sources(generic_sources, used_urls, used_hashes, success, VISUALS)
+                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q))
+                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q))
+            selected, selected_source, url, h = try_sources(generic_sources, used_urls, used_hashes, success, VISUALS)
 
         if not selected and last_good_path:
             selected = last_good_path
-            kind = last_good_kind
             selected_source = "Tekrar kullanılan sahne (hiçbir kaynak bulunamadı)"
             print("   ♻️ Hiçbir yeni içerik bulunamadı, bir önceki sahne kullanılıyor.")
         elif selected:
@@ -516,19 +432,18 @@ def main():
                 used_hashes.add(h)
             success += 1
             last_good_path = selected
-            last_good_kind = kind
 
         manifest.append({
             "scene": i,
             "scene_text": scene[:300],
             "smart_query": smart_query,
             "file": selected,
-            "type": kind or "image",
+            "type": "image",
             "source": selected_source or "YOK"
         })
 
         if selected:
-            print(f"   ✅ [{kind}] {selected_source}")
+            print(f"   ✅ [image] {selected_source}")
         else:
             print("   ⚠️ Hiç içerik bulunamadı.")
 
@@ -536,17 +451,15 @@ def main():
         time.sleep(0.2)
 
     fallback = None
-    fallback_kind = "image"
     for item in manifest:
         if item["file"]:
             fallback = item["file"]
-            fallback_kind = item["type"]
             break
 
     for item in manifest:
         if not item["file"] and fallback:
             item["file"] = fallback
-            item["type"] = fallback_kind
+            item["type"] = "image"
             item["source"] = "Geriye doğru doldurulan sahne"
 
     with open(MANIFEST, "w", encoding="utf-8") as f:
@@ -554,13 +467,10 @@ def main():
 
     save_used_visuals(used_urls, used_hashes)
 
-    video_count = sum(1 for m in manifest if m["type"] == "video")
-
     print("================================")
-    print("✅ GÖRSEL/VİDEO ARAMA BİTTİ")
+    print("✅ GÖRSEL ARAMA BİTTİ")
     print("================================")
     print(f"Benzersiz içerik: {success} / {len(scenes)}")
-    print(f"Video sahne: {video_count} / {len(manifest)}")
     print("Manifest:", MANIFEST)
 
 
