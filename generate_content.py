@@ -310,6 +310,7 @@ def call_ai(prompt):
 
     raise SystemExit("❌ Gemini, Cerebras ve NVIDIA başarısız oldu.")
 
+
 def load_history():
     if os.path.exists(TOPIC_HISTORY_FILE):
         try:
@@ -389,6 +390,7 @@ KURALLAR:
 - Sadece bilim insanı/mucit/kaşif hikayesi seç, başka
   konu türüne (savaş tarihi, genel merak, günlük eşyalar
   vb.) kayma.
+- Markdown biçimlendirme kullanma (yıldız, kalın, başlık, tire ayraç vb.). Sadece düz metin yaz.
 
 ÇIKTI FORMATI:
 
@@ -409,10 +411,11 @@ BÖLÜM 2: <başlık> - <özet>
         line = line.strip()
         if not line:
             continue
-        if line.upper().startswith("KONU:"):
-            topic = line.split(":", 1)[1].strip()
-        elif line.upper().startswith("BÖLÜM") or line.upper().startswith("BOLUM"):
-            bolumler.append(line)
+        clean_line = line.replace("*", "").replace("#", "").strip()
+        if clean_line.upper().startswith("KONU:"):
+            topic = clean_line.split(":", 1)[1].strip()
+        elif clean_line.upper().startswith("BÖLÜM") or clean_line.upper().startswith("BOLUM"):
+            bolumler.append(clean_line)
 
     topic = re.sub(r"\s+", " ", topic).strip().strip('"').strip()
 
