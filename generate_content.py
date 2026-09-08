@@ -4,10 +4,8 @@ import json
 import re
 import time
 import random
-from datetime import datetime
-
 import requests
-
+from datetime import datetime
 
 # =========================================================
 # DİZİNLER
@@ -19,6 +17,15 @@ REPO_BASE = os.path.dirname(os.path.abspath(__file__))
 
 os.makedirs(OUT, exist_ok=True)
 
+TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
+TOPIC_HISTORY_FILE = os.path.join(
+    REPO_BASE,
+    "video_topic_history.json"
+)
+OUTPUT_FILE = os.path.join(
+    OUT,
+    "current_content.txt"
+)
 
 # =========================================================
 # API ANAHTARLARI
@@ -39,9 +46,8 @@ NVIDIA_API_KEY = os.environ.get(
     ""
 ).strip()
 
-
 print("================================")
-print("🔑 API KONTROLÜ")
+print("🔐 API KONTROLÜ")
 print("================================")
 
 if GEMINI_API_KEY:
@@ -62,57 +68,30 @@ else:
 print("================================")
 print()
 
-
 # =========================================================
-# DOSYALAR
-# =========================================================
-
-TOPIC_FILE = os.path.join(
-    OUT,
-    "current_topic.txt"
-)
-
-TOPIC_HISTORY_FILE = os.path.join(
-    REPO_BASE,
-    "video_topic_history.json"
-)
-
-OUTPUT_FILE = os.path.join(
-    OUT,
-    "current_content.txt"
-)
-
-
-# =========================================================
-# API URL / MODEL
+# API URL + MODEL
 # =========================================================
 
-# Gemini
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/"
     "v1beta/models/gemini-3.6-flash:generateContent"
 )
 
-# Cerebras
 CEREBRAS_URL = (
     "https://api.cerebras.ai/v1/chat/completions"
 )
 
 CEREBRAS_MODEL = "llama-3.3-70b"
 
-# NVIDIA
 NVIDIA_URL = (
     "https://integrate.api.nvidia.com/v1/chat/completions"
 )
 
-# Eski:
+# ESKİ:
 # meta/llama-3.3-70b-instruct
 #
-# Bu model artık kullanılmıyor.
-#
-# Güncel NVIDIA endpoint'lerinden biri:
-NVIDIA_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
-
+# YENİ:
+NVIDIA_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
 # =========================================================
 # BELGESEL AYARLARI
@@ -120,38 +99,41 @@ NVIDIA_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
 
 BOLUM_SAYISI = 5
 BOLUM_BASINA_KELIME = 1100
+TOPLAM_HEDEF_KELIME = (
+    BOLUM_SAYISI * BOLUM_BASINA_KELIME
+)
 
 METADATA_AYIRICI = "===METADATA_AYIRICI==="
-
 
 # =========================================================
 # ÖRNEK KONULAR
 # =========================================================
 
 ORNEK_KONULAR = """
-- Semmelweis'in el yıkama önerisi yüzünden dışlanması
-- Nikola Tesla'nın hayatının son dönemindeki yalnızlığı
-- Alan Turing'in savaşa katkısı ve sonrasında yaşadıkları
-- Rosalind Franklin'in DNA araştırmalarındaki katkısı
-- Marie Curie'nin radyasyon araştırmaları
-- Ludwig Boltzmann'ın bilimsel fikirleri nedeniyle yaşadığı baskı
-- Barbara McClintock'un yıllarca anlaşılmayan keşfi
-- Galileo'nun bilimsel fikirleri nedeniyle yargılanması
-- Giordano Bruno'nun fikirleri nedeniyle idam edilmesi
-- Évariste Galois'nın kısa ama sıra dışı hayatı
-- Vera Rubin'in karanlık madde araştırmaları
-- Jocelyn Bell Burnell'in pulsar keşfi
-- Emmy Noether'in akademide karşılaştığı engeller
-- Ada Lovelace'in erken bilgisayar tarihindeki rolü
-- Katherine Johnson'un NASA'daki bilimsel katkıları
-- Srinivasa Ramanujan'ın matematiksel dehası
-- Kurt Gödel'in son yılları
-- Antoine Lavoisier'in bilimsel çalışmaları ve trajik sonu
+- Semmelweis'in el yıkama önerisi yüzünden tıp dünyası tarafından reddedilmesi
+- Nikola Tesla'nın sefalet ve yalnızlık içinde geçen son yılları
+- Alan Turing'in savaşı kazandırıp sonrasında toplum tarafından dışlanması
+- Rosalind Franklin'in DNA keşfindeki katkısının gölgede kalması
+- Marie Curie'nin radyasyon araştırmalarının ağır bedeli
+- Ludwig Boltzmann'ın bilim dünyası tarafından dışlanması
+- Barbara McClintock'un keşfinin yıllarca kabul edilmemesi
+- Galileo'nun fikirleri nedeniyle yargılanması
+- Giordano Bruno'nun düşünceleri nedeniyle idam edilmesi
+- Évariste Galois'nın genç yaşta trajik ölümü
+- Vera Rubin'in karanlık madde çalışmalarının uzun süre yeterince tanınmaması
+- Jocelyn Bell Burnell'in pulsar keşfindeki rolünün gölgede kalması
+- Emmy Noether'in kadın olduğu için akademide karşılaştığı engeller
+- Ada Lovelace'in çalışmalarının yıllar sonra anlaşılması
+- Katherine Johnson'un NASA'daki olağanüstü bilimsel kariyeri
+- Srinivasa Ramanujan'ın kısa ve zorlu hayatı
+- Kurt Gödel'in hayatının son dönemindeki yalnızlığı
+- Antoine Lavoisier'nin bilimsel başarıları ve trajik sonu
+- Chien-Shiung Wu'nun fizik tarihindeki büyük deneysel katkıları
+- Lise Meitner'in nükleer fisyonun anlaşılmasındaki rolü
 """
 
-
 # =========================================================
-# ANLATIM KURALLARI
+# TTS KURALLARI
 # =========================================================
 
 NARRATION_KURALLARI = """
@@ -162,86 +144,77 @@ KURALLAR:
 3. Emin olunmayan bilgileri kesin gerçek gibi sunma.
 4. Doğal, ciddi ve profesyonel Türkçe belgesel anlatımı kullan.
 5. Gereksiz tekrar yapma.
-6. Konuyu mantıklı bir akışla anlat.
+6. Konuyu mantıklı ve kronolojik bir akışla anlat.
 7. Bilimsel konuları herkesin anlayabileceği şekilde açıkla.
 8. Önemli kişiler, tarihler, yerler ve olaylara yer ver.
 9. Metin doğrudan TTS sistemine gönderilecek.
-10. Doğal Türkçe cümleler kullan.
-
-ÖNEMLİ:
-
-Bu bir film senaryosu değildir.
-
-Sahne yazma.
-Kamera hareketi yazma.
-Karakter hareketi yazma.
-Müzik yazma.
-Ses efekti yazma.
-
-Parantez kullanma.
-Köşeli parantez kullanma.
-
-"[Hüzünlü müzik]"
-"(kamera yaklaşır)"
-"Sahne 1"
-"Bölüm 1"
-
-gibi ifadeler kesinlikle yazma.
-
-İzleyici bölümlere ayrıldığını fark etmemeli.
-
-Anlatım kesintisiz tek bir belgesel akışı gibi
-hissettirmeli.
-
-Sadece seçilen konuyu doğrudan anlat.
-
-Metin doğrudan TTS sistemine gönderileceği için
-okuyucu yalnızca gerçek anlatım cümlelerini görmelidir.
+10. Film senaryosu gibi yazma.
+11. Sahne numarası yazma.
+12. Kamera hareketi yazma.
+13. Müzik veya ses efekti yazma.
+14. Parantez kullanma.
+15. Köşeli parantez kullanma.
+16. "Bölüm 1", "Sahne 1" gibi ifadeler kullanma.
+17. İzleyici bölümlere ayrıldığını hissetmemeli.
+18. Anlatım kesintisiz bir belgesel akışı gibi ilerlemeli.
+19. Sadece seçilen konuyu anlat.
+20. Metin doğrudan seslendirme sistemine gideceği için
+    yalnızca anlatıcı tarafından okunabilecek cümleler yaz.
 """
 
-
 # =========================================================
-# ORTAK YARDIMCI
+# GENEL HTTP YARDIMCISI
 # =========================================================
 
-def print_response_error(provider, response):
-    print()
-    print("=" * 60)
-    print(f"❌ {provider} API HATASI")
-    print("=" * 60)
-    print("HTTP:", response.status_code)
-
+def safe_json(response):
     try:
-        body = response.text
-        print(body[:4000])
+        return response.json()
     except Exception:
-        print("(Hata gövdesi okunamadı.)")
-
-    print("=" * 60)
-    print()
+        return None
 
 
-def get_retry_after(response, default=5):
-    value = response.headers.get("Retry-After")
+def print_response_error(service, response):
+    print(
+        f"❌ {service} HTTP {response.status_code}"
+    )
 
-    if value:
-        try:
-            return max(1, int(float(value)))
-        except Exception:
-            pass
+    text = response.text.strip()
 
-    return default
+    if text:
+        print(
+            f"📥 {service} hata cevabı:"
+        )
+        print(text[:3000])
 
 
 # =========================================================
 # GEMINI
 # =========================================================
 
-def call_gemini(prompt, max_retries=3):
-
+def call_gemini(prompt):
     if not GEMINI_API_KEY:
-        print("❌ GEMINI_API_KEY bulunamadı.")
+        print("❌ Gemini anahtarı yok.")
         return None
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Gemini'de 429 için uzun retry yapmıyoruz.
+    # Çünkü yedek sistemlerin amacı hızlı fallback.
+    max_retries = 2
 
     for attempt in range(1, max_retries + 1):
 
@@ -251,27 +224,13 @@ def call_gemini(prompt, max_retries=3):
         )
 
         try:
-
             response = requests.post(
                 GEMINI_URL,
                 params={
                     "key": GEMINI_API_KEY
                 },
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt
-                                }
-                            ]
-                        }
-                    ],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 12000
-                    }
-                },
+                headers=headers,
+                json=payload,
                 timeout=180
             )
 
@@ -282,56 +241,48 @@ def call_gemini(prompt, max_retries=3):
 
             if response.ok:
 
-                try:
-                    data = response.json()
+                data = safe_json(response)
 
-                    candidates = data.get(
-                        "candidates",
-                        []
-                    )
-
-                    if not candidates:
-                        print(
-                            "❌ Gemini candidates boş."
-                        )
-                        return None
-
-                    content = candidates[0].get(
-                        "content",
-                        {}
-                    )
-
-                    parts = content.get(
-                        "parts",
-                        []
-                    )
-
-                    text_parts = []
-
-                    for part in parts:
-                        text = part.get("text")
-
-                        if text:
-                            text_parts.append(text)
-
-                    result = "\n".join(
-                        text_parts
-                    ).strip()
-
-                    if result:
-                        return result
-
+                if not data:
                     print(
-                        "❌ Gemini boş cevap verdi."
+                        "❌ Gemini JSON cevabı alınamadı."
                     )
                     return None
 
-                except Exception as e:
-                    print(
-                        "❌ Gemini JSON işleme hatası:",
-                        type(e).__name__,
-                        str(e)
+                try:
+                    text = (
+                        data[
+                            "candidates"
+                        ][0][
+                            "content"
+                        ][
+                            "parts"
+                        ][0][
+                            "text"
+                        ]
                     )
+
+                    if text and text.strip():
+                        return text.strip()
+
+                except (
+                    KeyError,
+                    IndexError,
+                    TypeError
+                ):
+                    print(
+                        "❌ Gemini cevabı beklenen "
+                        "formatta değil."
+                    )
+
+                    print(
+                        json.dumps(
+                            data,
+                            ensure_ascii=False,
+                            indent=2
+                        )[:3000]
+                    )
+
                     return None
 
             # -------------------------------------------------
@@ -341,33 +292,19 @@ def call_gemini(prompt, max_retries=3):
             if response.status_code == 429:
 
                 print(
-                    "⚠️ Gemini 429 / kota veya hız limiti."
+                    "⚠️ Gemini 429: "
+                    "kota veya hız limiti."
                 )
-
-                if attempt >= max_retries:
-                    print(
-                        "⚠️ Gemini retry limiti doldu."
-                    )
-                    return None
-
-                wait_time = get_retry_after(
-                    response,
-                    default=10 * attempt
-                )
-
-                # Bir miktar jitter
-                wait_time += random.randint(0, 3)
 
                 print(
-                    f"⏳ Gemini için "
-                    f"{wait_time} saniye bekleniyor..."
+                    "➡️ Gemini bırakılıyor, "
+                    "Cerebras fallback devreye girecek."
                 )
 
-                time.sleep(wait_time)
-                continue
+                return None
 
             # -------------------------------------------------
-            # Sunucu hataları
+            # Geçici sunucu hataları
             # -------------------------------------------------
 
             if response.status_code in {
@@ -377,31 +314,29 @@ def call_gemini(prompt, max_retries=3):
                 504
             }:
 
-                print(
-                    "⚠️ Gemini sunucu hatası."
-                )
+                if attempt < max_retries:
 
-                if attempt >= max_retries:
-                    return None
+                    wait_time = (
+                        4 * attempt
+                        + random.randint(1, 3)
+                    )
 
-                wait_time = (
-                    5 * attempt
-                    + random.randint(0, 3)
-                )
+                    print(
+                        f"⏳ Gemini geçici hata. "
+                        f"{wait_time} saniye bekleniyor..."
+                    )
 
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
+                    time.sleep(wait_time)
+                    continue
 
-                time.sleep(wait_time)
-                continue
+                return None
 
             # -------------------------------------------------
             # Diğer hatalar
             # -------------------------------------------------
 
             print_response_error(
-                "GEMINI",
+                "Gemini",
                 response
             )
 
@@ -413,10 +348,11 @@ def call_gemini(prompt, max_retries=3):
                 "⚠️ Gemini timeout."
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
+                time.sleep(4)
+                continue
 
-            time.sleep(5)
+            return None
 
         except requests.exceptions.RequestException as e:
 
@@ -425,10 +361,11 @@ def call_gemini(prompt, max_retries=3):
                 str(e)
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
+                time.sleep(4)
+                continue
 
-            time.sleep(5)
+            return None
 
     return None
 
@@ -437,11 +374,10 @@ def call_gemini(prompt, max_retries=3):
 # CEREBRAS
 # =========================================================
 
-def call_cerebras(prompt, max_retries=2):
-
+def call_cerebras(prompt):
     if not CEREBRAS_API_KEY:
         print(
-            "❌ CEREBRAS_API_KEY bulunamadı."
+            "❌ CEREBRAS_API_KEY yok."
         )
         return None
 
@@ -472,6 +408,10 @@ def call_cerebras(prompt, max_retries=2):
         "max_tokens": 12000
     }
 
+    # 401 kesin hatadır.
+    # İkinci kez aynı hatayı üretmenin anlamı yok.
+    max_retries = 2
+
     for attempt in range(1, max_retries + 1):
 
         print(
@@ -495,45 +435,46 @@ def call_cerebras(prompt, max_retries=2):
 
             if response.ok:
 
-                try:
+                data = safe_json(response)
 
-                    data = response.json()
-
-                    choices = data.get(
-                        "choices",
-                        []
-                    )
-
-                    if not choices:
-                        print(
-                            "❌ Cerebras choices boş."
-                        )
-                        return None
-
-                    message = choices[0].get(
-                        "message",
-                        {}
-                    )
-
-                    result = message.get(
-                        "content",
-                        ""
-                    )
-
-                    if result:
-                        return result.strip()
-
+                if not data:
                     print(
-                        "❌ Cerebras boş cevap verdi."
+                        "❌ Cerebras JSON cevabı yok."
                     )
                     return None
 
-                except Exception as e:
+                try:
+
+                    text = (
+                        data[
+                            "choices"
+                        ][0][
+                            "message"
+                        ][
+                            "content"
+                        ]
+                    )
+
+                    if text and text.strip():
+                        return text.strip()
+
+                except (
+                    KeyError,
+                    IndexError,
+                    TypeError
+                ):
 
                     print(
-                        "❌ Cerebras JSON işleme hatası:",
-                        type(e).__name__,
-                        str(e)
+                        "❌ Cerebras cevabı "
+                        "beklenen formatta değil."
+                    )
+
+                    print(
+                        json.dumps(
+                            data,
+                            ensure_ascii=False,
+                            indent=2
+                        )[:3000]
                     )
 
                     return None
@@ -549,11 +490,10 @@ def call_cerebras(prompt, max_retries=2):
                 )
 
                 print(
-                    "ℹ️ GitHub Secrets içindeki "
+                    "ℹ️ GitHub Secrets → "
                     "CEREBRAS_API_KEY kontrol edilmeli."
                 )
 
-                # 401 için tekrar denemek anlamsız.
                 return None
 
             # -------------------------------------------------
@@ -566,23 +506,23 @@ def call_cerebras(prompt, max_retries=2):
                     "⚠️ Cerebras 429 / kota."
                 )
 
-                if attempt >= max_retries:
-                    return None
+                if attempt < max_retries:
 
-                wait_time = get_retry_after(
-                    response,
-                    default=10 * attempt
-                )
+                    wait_time = (
+                        8 * attempt
+                    )
 
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
+                    print(
+                        f"⏳ {wait_time} saniye bekleniyor..."
+                    )
 
-                time.sleep(wait_time)
-                continue
+                    time.sleep(wait_time)
+                    continue
+
+                return None
 
             # -------------------------------------------------
-            # Sunucu hataları
+            # Geçici hatalar
             # -------------------------------------------------
 
             if response.status_code in {
@@ -592,20 +532,18 @@ def call_cerebras(prompt, max_retries=2):
                 504
             }:
 
-                if attempt >= max_retries:
-                    return None
+                if attempt < max_retries:
 
-                wait_time = 5 * attempt
+                    time.sleep(
+                        5 * attempt
+                    )
 
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
+                    continue
 
-                time.sleep(wait_time)
-                continue
+                return None
 
             print_response_error(
-                "CEREBRAS",
+                "Cerebras",
                 response
             )
 
@@ -617,10 +555,11 @@ def call_cerebras(prompt, max_retries=2):
                 "⚠️ Cerebras timeout."
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
+                time.sleep(5)
+                continue
 
-            time.sleep(5)
+            return None
 
         except requests.exceptions.RequestException as e:
 
@@ -629,23 +568,23 @@ def call_cerebras(prompt, max_retries=2):
                 str(e)
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
+                time.sleep(5)
+                continue
 
-            time.sleep(5)
+            return None
 
     return None
 
 
 # =========================================================
-# NVIDIA
+# NVIDIA NIM
 # =========================================================
 
-def call_nvidia(prompt, max_retries=2):
-
+def call_nvidia(prompt):
     if not NVIDIA_API_KEY:
         print(
-            "❌ NVIDIA_API_KEY bulunamadı."
+            "❌ NVIDIA_API_KEY yok."
         )
         return None
 
@@ -653,7 +592,8 @@ def call_nvidia(prompt, max_retries=2):
         "Authorization": (
             f"Bearer {NVIDIA_API_KEY}"
         ),
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
 
     payload = {
@@ -673,8 +613,15 @@ def call_nvidia(prompt, max_retries=2):
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 12000
+
+        # NVIDIA'nın güncel Nemotron Super
+        # endpoint'i 16384'e kadar destekliyor.
+        "max_tokens": 12000,
+
+        "stream": False
     }
+
+    max_retries = 2
 
     for attempt in range(1, max_retries + 1):
 
@@ -683,13 +630,18 @@ def call_nvidia(prompt, max_retries=2):
             f"{attempt}/{max_retries}"
         )
 
+        print(
+            "🧠 NVIDIA model:",
+            NVIDIA_MODEL
+        )
+
         try:
 
             response = requests.post(
                 NVIDIA_URL,
                 headers=headers,
                 json=payload,
-                timeout=180
+                timeout=300
             )
 
             print(
@@ -697,50 +649,88 @@ def call_nvidia(prompt, max_retries=2):
                 response.status_code
             )
 
-            if response.ok:
+            # -------------------------------------------------
+            # 200
+            # -------------------------------------------------
+
+            if response.status_code == 200:
+
+                data = safe_json(response)
+
+                if not data:
+                    print(
+                        "❌ NVIDIA JSON cevabı yok."
+                    )
+                    return None
 
                 try:
 
-                    data = response.json()
-
-                    choices = data.get(
-                        "choices",
-                        []
+                    text = (
+                        data[
+                            "choices"
+                        ][0][
+                            "message"
+                        ][
+                            "content"
+                        ]
                     )
 
-                    if not choices:
+                    if text and text.strip():
+                        return text.strip()
+
+                except (
+                    KeyError,
+                    IndexError,
+                    TypeError
+                ):
+
+                    print(
+                        "❌ NVIDIA cevabı "
+                        "beklenen formatta değil."
+                    )
+
+                    print(
+                        json.dumps(
+                            data,
+                            ensure_ascii=False,
+                            indent=2
+                        )[:3000]
+                    )
+
+                    return None
+
+            # -------------------------------------------------
+            # 202
+            # -------------------------------------------------
+
+            if response.status_code == 202:
+
+                print(
+                    "⏳ NVIDIA isteği 202 döndürdü."
+                )
+
+                data = safe_json(response)
+
+                if data:
+
+                    request_id = (
+                        data.get("requestId")
+                        or data.get("request_id")
+                    )
+
+                    if request_id:
                         print(
-                            "❌ NVIDIA choices boş."
+                            "ℹ️ NVIDIA requestId:",
+                            request_id
                         )
-                        return None
 
-                    message = choices[0].get(
-                        "message",
-                        {}
-                    )
+                print(
+                    "⚠️ Bu çalışma için "
+                    "asenkron NVIDIA cevabı "
+                    "alınamadı."
+                )
 
-                    result = message.get(
-                        "content",
-                        ""
-                    )
-
-                    if result:
-                        return result.strip()
-
-                    print(
-                        "❌ NVIDIA boş cevap verdi."
-                    )
-                    return None
-
-                except Exception as e:
-
-                    print(
-                        "❌ NVIDIA JSON işleme hatası:",
-                        type(e).__name__,
-                        str(e)
-                    )
-
-                    return None
+                return None
 
             # -------------------------------------------------
             # 401
@@ -755,20 +745,34 @@ def call_nvidia(prompt, max_retries=2):
                 return None
 
             # -------------------------------------------------
-            # 404 / 410
+            # 404
             # -------------------------------------------------
 
-            if response.status_code in {
-                404,
-                410
-            }:
+            if response.status_code == 404:
 
                 print(
-                    "❌ NVIDIA modeli kullanılamıyor."
+                    "❌ NVIDIA model/endpoint bulunamadı."
+                )
+
+                print_response_error(
+                    "NVIDIA",
+                    response
+                )
+
+                return None
+
+            # -------------------------------------------------
+            # 410
+            # -------------------------------------------------
+
+            if response.status_code == 410:
+
+                print(
+                    "❌ NVIDIA modeli artık kullanılamıyor."
                 )
 
                 print(
-                    "Model:",
+                    "🧠 Kullanılan model:",
                     NVIDIA_MODEL
                 )
 
@@ -777,7 +781,6 @@ def call_nvidia(prompt, max_retries=2):
                     response
                 )
 
-                # Model yoksa retry anlamsız.
                 return None
 
             # -------------------------------------------------
@@ -790,23 +793,23 @@ def call_nvidia(prompt, max_retries=2):
                     "⚠️ NVIDIA 429 / kota."
                 )
 
-                if attempt >= max_retries:
-                    return None
+                if attempt < max_retries:
 
-                wait_time = get_retry_after(
-                    response,
-                    default=10 * attempt
-                )
+                    wait_time = (
+                        10 * attempt
+                    )
 
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
+                    print(
+                        f"⏳ {wait_time} saniye bekleniyor..."
+                    )
 
-                time.sleep(wait_time)
-                continue
+                    time.sleep(wait_time)
+                    continue
+
+                return None
 
             # -------------------------------------------------
-            # Sunucu hataları
+            # Geçici sunucu hataları
             # -------------------------------------------------
 
             if response.status_code in {
@@ -816,17 +819,21 @@ def call_nvidia(prompt, max_retries=2):
                 504
             }:
 
-                if attempt >= max_retries:
-                    return None
+                if attempt < max_retries:
 
-                wait_time = 5 * attempt
+                    wait_time = (
+                        5 * attempt
+                    )
 
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
+                    print(
+                        f"⏳ NVIDIA geçici hata. "
+                        f"{wait_time} saniye bekleniyor..."
+                    )
 
-                time.sleep(wait_time)
-                continue
+                    time.sleep(wait_time)
+                    continue
+
+                return None
 
             print_response_error(
                 "NVIDIA",
@@ -841,10 +848,20 @@ def call_nvidia(prompt, max_retries=2):
                 "⚠️ NVIDIA timeout."
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
 
-            time.sleep(5)
+                print(
+                    "⏳ NVIDIA tekrar deneniyor..."
+                )
+
+                time.sleep(6)
+                continue
+
+            print(
+                "❌ NVIDIA timeout retry limiti doldu."
+            )
+
+            return None
 
         except requests.exceptions.RequestException as e:
 
@@ -853,10 +870,11 @@ def call_nvidia(prompt, max_retries=2):
                 str(e)
             )
 
-            if attempt >= max_retries:
-                return None
+            if attempt < max_retries:
+                time.sleep(6)
+                continue
 
-            time.sleep(5)
+            return None
 
     return None
 
@@ -868,49 +886,22 @@ def call_nvidia(prompt, max_retries=2):
 def call_ai(prompt):
 
     # =====================================================
-    # 1. GEMINI
+    # 1 — GEMINI
     # =====================================================
 
     if GEMINI_API_KEY:
 
-        result = call_gemini(
-            prompt,
-            max_retries=3
-        )
+        print()
+        print("================================")
+        print("🤖 ANA SİSTEM: GEMINI")
+        print("================================")
+
+        result = call_gemini(prompt)
 
         if result:
 
-            print()
             print(
-                "✅ İçerik Gemini "
-                "tarafından üretildi."
-            )
-
-            return result
-
-    print()
-    print("================================")
-    print("⚠️ GEMINI BAŞARISIZ")
-    print("🟢 CEREBRAS YEDEK SİSTEM DEVREDE")
-    print("================================")
-
-    # =====================================================
-    # 2. CEREBRAS
-    # =====================================================
-
-    if CEREBRAS_API_KEY:
-
-        result = call_cerebras(
-            prompt,
-            max_retries=2
-        )
-
-        if result:
-
-            print()
-            print(
-                "✅ İçerik Cerebras "
-                "tarafından üretildi."
+                "✅ İçerik Gemini tarafından üretildi."
             )
 
             return result
@@ -918,33 +909,55 @@ def call_ai(prompt):
     else:
 
         print(
-            "⚠️ Cerebras API key yok, "
-            "NVIDIA'ya geçiliyor."
+            "⚠️ Gemini anahtarı yok."
         )
+
+    # =====================================================
+    # 2 — CEREBRAS
+    # =====================================================
 
     print()
     print("================================")
-    print("⚠️ CEREBRAS DA BAŞARISIZ")
-    print("🟩 NVIDIA YEDEK SİSTEM DEVREDE")
+    print("⚠️ GEMINI BAŞARISIZ")
+    print("🟢 CEREBRAS YEDEK SİSTEM DEVREDE")
     print("================================")
 
-    # =====================================================
-    # 3. NVIDIA
-    # =====================================================
+    if CEREBRAS_API_KEY:
 
-    if NVIDIA_API_KEY:
-
-        result = call_nvidia(
-            prompt,
-            max_retries=2
-        )
+        result = call_cerebras(prompt)
 
         if result:
 
-            print()
             print(
-                "✅ İçerik NVIDIA "
-                "tarafından üretildi."
+                "✅ İçerik Cerebras tarafından üretildi."
+            )
+
+            return result
+
+    else:
+
+        print(
+            "⚠️ Cerebras API key yok."
+        )
+
+    # =====================================================
+    # 3 — NVIDIA
+    # =====================================================
+
+    print()
+    print("================================")
+    print("⚠️ CEREBRAS BAŞARISIZ")
+    print("🟩 NVIDIA YEDEK SİSTEM DEVREDE")
+    print("================================")
+
+    if NVIDIA_API_KEY:
+
+        result = call_nvidia(prompt)
+
+        if result:
+
+            print(
+                "✅ İçerik NVIDIA tarafından üretildi."
             )
 
             return result
@@ -955,14 +968,18 @@ def call_ai(prompt):
             "⚠️ NVIDIA API key yok."
         )
 
-    raise SystemExit(
-        "❌ Gemini, Cerebras ve NVIDIA "
-        "başarısız oldu."
+    # =====================================================
+    # HEPSİ BAŞARISIZ
+    # =====================================================
+
+    raise RuntimeError(
+        "Gemini, Cerebras ve NVIDIA "
+        "başarılı bir cevap veremedi."
     )
 
 
 # =========================================================
-# GEÇMİŞ
+# HISTORY
 # =========================================================
 
 def load_history():
@@ -1022,7 +1039,7 @@ def save_history(history):
 
 
 # =========================================================
-# KONU KONTROLÜ
+# KONU VALIDASYONU
 # =========================================================
 
 def is_valid_topic(topic):
@@ -1030,19 +1047,21 @@ def is_valid_topic(topic):
     if not topic:
         return False
 
+    topic = topic.strip()
+
     if len(topic) < 8:
         return False
 
     if len(topic) > 220:
         return False
 
+    if len(topic.split()) < 2:
+        return False
+
     if not re.search(
         r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}",
         topic
     ):
-        return False
-
-    if len(topic.split()) < 2:
         return False
 
     return True
@@ -1058,7 +1077,7 @@ def generate_topic_and_outline(history):
 
         avoid_list = "\n".join(
             f"- {t}"
-            for t in history
+            for t in history[-100:]
         )
 
     else:
@@ -1068,76 +1087,86 @@ def generate_topic_and_outline(history):
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı Türkçe
 bilgi/tarih/bilim YouTube kanalı için
-30-45 dakikalık belgesel hazırlayan
-profesyonel editör ve senaristsin.
+30-45 dakikalık belgeseller hazırlayan
+profesyonel editör ve araştırma yazarı olarak
+görev yapıyorsun.
 
-KANALIN NİŞİ:
+KANAL NİŞİ:
 
-Kanal bilim insanlarının, mucitlerin ve
-kaşiflerin İNSANİ VE DRAMATİK HİKAYELERİNE
-odaklanıyor.
+Kanal yalnızca bilim insanlarının,
+mucitlerin ve kaşiflerin gerçek,
+insani ve dramatik hikayelerine odaklanır.
 
 Kuru bilgi anlatımı istemiyorum.
 
-Bir bilim insanının yaşadığı:
+Hikayede mümkün olduğunca:
 
-haksızlık,
-trajedi,
 mücadele,
+haksızlık,
 yalnızlık,
+reddedilme,
 başarısızlık,
-geç kabul görme,
-bilimsel engeller,
-toplumsal baskı
+geç gelen tanınma,
+bilimsel mücadele,
+kişisel bedel,
+trajedi
+ve sonunda etkileyici bir sonuç
 
-gibi gerçek olaylardan hareketle güçlü
-bir belgesel konusu seç.
+bulunmalıdır.
 
-Amaç izleyicide gerçek bir duygusal bağ
-oluşturmak.
+Ancak dramatik etki oluşturmak için
+gerçek dışı olay uydurmak kesinlikle yasaktır.
 
-ÖRNEK KONULAR:
+ÖRNEK KONU TARZLARI:
 
 {ORNEK_KONULAR}
 
-Daha önce kullanılan konular:
+DAHA ÖNCE KULLANILAN KONULAR:
 
 {avoid_list}
 
+Yeni ve farklı bir konu seç.
+
+Konu:
+
+- Gerçek bir bilim insanı,
+  mucit veya kaşif hakkında olmalı.
+- Gerçek ve doğrulanabilir olmalı.
+- 30-45 dakikalık anlatımı doldurabilecek
+  kadar zengin olmalı.
+- Tek bir olay yerine kişinin hayatı,
+  çalışmaları ve yaşadığı mücadeleleri
+  anlatmaya uygun olmalı.
+- Diktatör veya savaş suçlusu seçme.
+- Propaganda üretme.
+- Sadece bilimsel keşif anlatısı seçme;
+  kişinin insani hikayesi de güçlü olmalı.
+
 Bu istekte:
 
-1. Tek bir konu seç.
-2. Konu için 5 bölümlük plan oluştur.
+1. Konuyu seç.
+2. Beş bölümlük kronolojik plan oluştur.
 
 Her bölüm yaklaşık
 {BOLUM_BASINA_KELIME} kelimelik anlatımı
-destekleyecek kadar zengin olmalıdır.
-
-Toplam hedef:
-
-{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime.
-
-KURALLAR:
-
-- Gerçek ve doğrulanabilir konu seç.
-- Bilgi uydurma.
-- Diktatör veya savaş suçlusu seçme.
-- Propaganda üretme.
-- Kışkırtıcı siyasi içerik üretme.
-- Sadece bilim insanı, mucit veya kaşif seç.
-- Kişinin insani tarafını merkeze al.
-- Güçlü açılış düşün.
-- Son bölüm güçlü kapanışa sahip olsun.
-- Markdown kullanma.
+taşıyabilecek kadar kapsamlı olmalı.
 
 ÇIKTI FORMATI:
 
 KONU: <konu>
+
 BÖLÜM 1: <başlık> - <özet>
+
 BÖLÜM 2: <başlık> - <özet>
+
 BÖLÜM 3: <başlık> - <özet>
+
 BÖLÜM 4: <başlık> - <özet>
+
 BÖLÜM 5: <başlık> - <özet>
+
+Sadece düz metin kullan.
+Markdown kullanma.
 """
 
     raw = call_ai(prompt)
@@ -1148,7 +1177,7 @@ BÖLÜM 5: <başlık> - <özet>
     topic = ""
     bolumler = []
 
-    for line in raw.strip().splitlines():
+    for line in raw.splitlines():
 
         line = line.strip()
 
@@ -1185,37 +1214,43 @@ BÖLÜM 5: <başlık> - <özet>
         r"\s+",
         " ",
         topic
-    ).strip().strip('"').strip()
+    ).strip()
 
-    # AI sadece konu verdiyse
-    if not bolumler and topic:
+    topic = (
+        topic
+        .strip('"')
+        .strip("'")
+    )
+
+    # AI 5 bölüm yerine daha az üretirse
+    # ana sistemin çökmesini önlemek için
+    # eldeki plan korunur.
+    if topic and not bolumler:
 
         bolumler = [
-            f"BÖLÜM 1: {topic} - Konunun genel anlatımı"
+            f"BÖLÜM {i}: "
+            f"{topic} - "
+            f"Konunun kronolojik anlatımı"
+            for i in range(
+                1,
+                BOLUM_SAYISI + 1
+            )
         ]
 
     print()
+    print("---- AI KONU HAM ÇIKTI ----")
+    print(raw[:2500])
+    print("---------------------------")
     print(
-        "---- AI HAM ÇIKTI ----"
-    )
-
-    print(
-        raw[:2500]
-    )
-
-    print(
-        "---- ÜRETİLEN KONU:",
+        "🎯 Üretilen konu:",
         repr(topic)
     )
-
     print(
-        "---- BÖLÜM SAYISI:",
+        "📚 Bölüm sayısı:",
         len(bolumler)
     )
-
-    print(
-        "----------------------"
-    )
+    print("---------------------------")
+    print()
 
     return topic, bolumler
 
@@ -1240,17 +1275,18 @@ def generate_chapter(
 
         devamlilik = f"""
 
-BİR ÖNCEKİ BÖLÜMÜN SON KISMI:
+ÖNCEKİ BÖLÜMÜN SON KISMI:
 
 \"\"\"
 {previous_tail}
 \"\"\"
 
-Buradan doğal şekilde devam et.
+Yeni anlatımı buradan doğal biçimde
+devam ettir.
 
-Önceki kısmı tekrar etme.
+Önceki bölümde anlatılan olayları
+tekrar etme.
 """
-
 
     metadata_talimati = ""
 
@@ -1260,78 +1296,96 @@ Buradan doğal şekilde devam et.
 
 BU SON BÖLÜM.
 
-Anlatımı bitirdikten sonra aşağıdaki
-ayırıcıyı kullan:
+Anlatım bittikten sonra aşağıdaki ayırıcıyı
+EKLE:
 
 {METADATA_AYIRICI}
 
 BAŞLIK:
-Merak uyandırıcı ama yanıltıcı olmayan
+Merak uyandırıcı fakat yanıltıcı olmayan
 YouTube başlığı.
 
 AÇIKLAMA:
-3-5 cümlelik açıklama.
+3-5 cümlelik YouTube açıklaması.
 
 ETİKETLER:
-15-25 Türkçe etiket,
-virgülle ayrılmış.
+15-25 Türkçe etiket.
+Virgülle ayır.
 """
 
-
     prompt = f"""
-Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı
-için profesyonel Türkçe tarih ve bilim
-belgeseli anlatıcısısın.
-
-Kanalın nişi:
-
-Bilim insanlarının, mucitlerin ve kaşiflerin
-insani ve dramatik hikayeleri.
+Sen DAHİLER VE KEŞİFLER adlı YouTube kanalı için
+profesyonel Türkçe tarih ve bilim belgeseli
+anlatıcısısın.
 
 GENEL KONU:
 
 {topic}
 
-BÖLÜM PLANI:
+GENEL BÖLÜM PLANI:
 
 {outline_text}
 
-YAZILACAK BÖLÜM:
+ŞU ANDA YAZILACAK BÖLÜM:
 
 {chapter_line}
 
-{devamlilik}
+Bu bölüm yaklaşık
+{BOLUM_BASINA_KELIME} kelime olmalıdır.
 
-Yaklaşık
-{BOLUM_BASINA_KELIME}
-kelimelik akıcı ve kesintisiz
-belgesel anlatımı yaz.
+Amaç, toplamda yaklaşık
+{TOPLAM_HEDEF_KELIME} kelimelik
+30-45 dakikalık doğal bir belgesel oluşturmaktır.
 
-Bu bölümün başlangıcı ve bitişi,
-genel hikayenin doğal parçası gibi olsun.
+ANLATIM TARZI:
 
-İzleyici bunun bir bölüm olduğunu
-fark etmemeli.
+Kişinin yalnızca bilimsel başarılarını değil,
+insani tarafını da anlat.
 
-Anlatım:
+Okuyucu;
 
-- ciddi
-- doğal
-- profesyonel
-- merak uyandırıcı
-- duygusal ama abartısız
+mücadeleyi,
+hayal kırıklığını,
+haksızlığı,
+umudu,
+başarıyı
+ve kişisel bedeli
 
-olmalı.
+hissedebilmeli.
+
+Ancak duygusal etki oluşturmak için
+gerçek dışı ayrıntı ekleme.
+
+KRİTİK KURALLAR:
+
+- Bilgi uydurma.
+- Tarihleri mümkün olduğunca doğru aktar.
+- Emin olunmayan bilgileri kesin gerçek gibi sunma.
+- Doğal ve ciddi Türkçe kullan.
+- Gereksiz tekrar yapma.
+- Kronolojik akışı koru.
+- Bilimsel kavramları sade anlat.
+- Önemli isimlere ve tarihlere yer ver.
+- Sahne yazma.
+- Kamera hareketi yazma.
+- Müzik yazma.
+- Ses efekti yazma.
+- Parantez kullanma.
+- Köşeli parantez kullanma.
+- "Bölüm 1" gibi başlıkları anlatımın
+  içinde kullanma.
+- İzleyici bölümlere ayrıldığını
+  fark etmemeli.
+- Çıktı doğrudan TTS'e gönderilecek.
+- Yalnızca anlatıcının okuyacağı
+  doğal cümleler üret.
 
 {NARRATION_KURALLARI}
 
-ÇIKTI SADECE SESLENDİRME METNİ OLMALI.
+{devamlilik}
 
-Başlık yazma.
-Bölüm numarası yazma.
-Sahne açıklaması yazma.
-Kamera açıklaması yazma.
-Müzik açıklaması yazma.
+Şimdi sadece bu bölümün
+belgesel anlatımını üret.
 
 {metadata_talimati}
 """
@@ -1374,20 +1428,25 @@ def parse_chapter_with_metadata(raw_text):
 
 
 # =========================================================
-# VARSAYILAN METADATA
+# DEFAULT METADATA
 # =========================================================
 
 def default_metadata(topic):
 
+    safe_title = topic[:95].strip()
+
     return (
         "BAŞLIK:\n"
-        f"{topic[:95]}\n\n"
+        f"{safe_title}\n\n"
         "AÇIKLAMA:\n"
-        f"{topic} hakkında kapsamlı "
-        "bir belgesel.\n\n"
+        f"{topic} hakkında gerçek olaylara "
+        "dayanan kapsamlı bir bilim ve tarih "
+        "belgeseli.\n\n"
         "ETİKETLER:\n"
-        "tarih, bilim, belgesel, keşif, "
-        "bilgi, bilim insanları"
+        "tarih, bilim, bilim insanları, "
+        "belgesel, keşif, mucitler, "
+        "bilim tarihi, dahiler, "
+        "tarihi olaylar"
     )
 
 
@@ -1398,35 +1457,24 @@ def default_metadata(topic):
 def main():
 
     print("================================")
-    print(
-        "🎬 30-45 DAKİKALIK "
-        "BELGESEL MOTORU"
-    )
+    print("🎬 30-45 DAKİKALIK BELGESEL MOTORU")
     print("================================")
-
     print(
         f"Hedef: "
         f"{BOLUM_SAYISI} bölüm x "
         f"{BOLUM_BASINA_KELIME} kelime"
     )
-
     print(
         f"Toplam hedef: "
-        f"{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime"
+        f"{TOPLAM_HEDEF_KELIME} kelime"
     )
-
+    print("Ana AI: Gemini")
+    print("1. Yedek AI: Cerebras")
     print(
-        "Ana AI: Gemini"
+        "2. Yedek AI: "
+        "NVIDIA Nemotron Super 49B v1.5"
     )
-
-    print(
-        "1. Yedek AI: Cerebras"
-    )
-
-    print(
-        "2. Yedek AI: NVIDIA"
-    )
-
+    print("================================")
     print()
 
     history = load_history()
@@ -1435,7 +1483,7 @@ def main():
     bolumler = None
 
     # =====================================================
-    # KONU ÜRETİMİ
+    # KONU DENEMELERİ
     # =====================================================
 
     print(
@@ -1444,17 +1492,23 @@ def main():
 
     for attempt in range(1, 3):
 
-        try:
+        print(
+            f"🔄 Konu denemesi "
+            f"{attempt}/2"
+        )
 
-            print(
-                f"🔄 Konu denemesi "
-                f"{attempt}/2"
-            )
+        try:
 
             candidate_topic, candidate_bolumler = (
                 generate_topic_and_outline(
                     history
                 )
+            )
+
+            candidate_topic = (
+                candidate_topic.strip()
+                if candidate_topic
+                else ""
             )
 
             if (
@@ -1463,26 +1517,27 @@ def main():
                     candidate_topic
                 )
                 and candidate_topic not in history
-                and candidate_bolumler
+                and len(candidate_bolumler) >= 3
             ):
 
                 topic = candidate_topic
-                bolumler = candidate_bolumler
+
+                # En fazla 5 bölüm.
+                bolumler = candidate_bolumler[
+                    :BOLUM_SAYISI
+                ]
 
                 break
 
             print(
-                "⚠️ Geçersiz veya tekrar konu."
+                "⚠️ Geçersiz, tekrar veya "
+                "eksik konu/plan geldi."
             )
-
-        except SystemExit:
-            raise
 
         except Exception as e:
 
             print(
                 "⚠️ Konu üretim hatası:",
-                type(e).__name__,
                 str(e)
             )
 
@@ -1496,12 +1551,28 @@ def main():
         )
 
     # =====================================================
-    # BÖLÜM SAYISINI SINIRLA
+    # BÖLÜM PLANINI 5'E TAMAMLA
     # =====================================================
 
-    bolumler = bolumler[
-        :BOLUM_SAYISI
-    ]
+    if len(bolumler) < BOLUM_SAYISI:
+
+        print(
+            "⚠️ AI 5 bölüm üretmedi."
+        )
+
+        mevcut = len(bolumler)
+
+        for i in range(
+            mevcut + 1,
+            BOLUM_SAYISI + 1
+        ):
+
+            bolumler.append(
+                f"BÖLÜM {i}: "
+                f"{topic} - "
+                f"Konunun devamı ve "
+                f"tarihsel sonuçları"
+            )
 
     outline_text = "\n".join(
         bolumler
@@ -1521,20 +1592,19 @@ def main():
         )
 
     # =====================================================
-    # GEÇMİŞE EKLE
+    # HISTORY
     # =====================================================
 
     if topic not in history:
 
         history.append(topic)
 
-        # Aşırı büyümeyi engelle
-        history = history[-200:]
-
-        save_history(history)
+        save_history(
+            history
+        )
 
     # =====================================================
-    # KONU DOSYASI
+    # TOPIC FILE
     # =====================================================
 
     with open(
@@ -1545,14 +1615,14 @@ def main():
 
         f.write(topic)
 
+    # =====================================================
+    # BÖLÜMLER
+    # =====================================================
+
     print()
     print(
         "✍️ Bölümler yazılıyor..."
     )
-
-    # =====================================================
-    # BÖLÜMLER
-    # =====================================================
 
     script_parts = []
 
@@ -1569,10 +1639,6 @@ def main():
         1
     ):
 
-        is_last = (
-            idx == total
-        )
-
         print()
         print(
             "================================"
@@ -1587,69 +1653,105 @@ def main():
             "================================"
         )
 
-        try:
+        is_last = (
+            idx == total
+        )
 
-            raw = generate_chapter(
-                topic=topic,
-                outline_text=outline_text,
-                chapter_line=chapter_line,
-                chapter_index=idx,
-                total_chapters=total,
-                previous_tail=previous_tail,
-                need_metadata=is_last
-            )
+        chapter_success = False
 
-        except SystemExit:
-
-            raise
-
-        except Exception as e:
+        # Bölüm başına iki üretim denemesi.
+        for chapter_attempt in range(1, 3):
 
             print(
-                f"❌ Bölüm {idx} üretim hatası:"
+                f"🔁 Bölüm üretim denemesi "
+                f"{chapter_attempt}/2"
             )
+
+            try:
+
+                raw = generate_chapter(
+                    topic=topic,
+                    outline_text=outline_text,
+                    chapter_line=chapter_line,
+                    chapter_index=idx,
+                    total_chapters=total,
+                    previous_tail=previous_tail,
+                    need_metadata=is_last
+                )
+
+                chapter_text, maybe_metadata = (
+                    parse_chapter_with_metadata(
+                        raw
+                    )
+                )
+
+                # Çok kısa cevapları bölüm
+                # olarak kabul etme.
+                word_count = len(
+                    chapter_text.split()
+                ) if chapter_text else 0
+
+                if word_count < 300:
+
+                    print(
+                        f"⚠️ Bölüm çok kısa: "
+                        f"{word_count} kelime."
+                    )
+
+                    if chapter_attempt < 2:
+
+                        time.sleep(3)
+                        continue
+
+                    break
+
+                script_parts.append(
+                    chapter_text
+                )
+
+                previous_tail = (
+                    chapter_text[-800:]
+                )
+
+                if is_last:
+
+                    metadata_raw = (
+                        maybe_metadata
+                    )
+
+                print(
+                    f"✅ Bölüm {idx}: "
+                    f"{word_count} kelime"
+                )
+
+                chapter_success = True
+
+                break
+
+            except Exception as e:
+
+                print(
+                    f"❌ Bölüm {idx} üretilemedi:",
+                    str(e)
+                )
+
+                if chapter_attempt < 2:
+
+                    print(
+                        "⏳ Bölüm tekrar deneniyor..."
+                    )
+
+                    time.sleep(4)
+
+        if not chapter_success:
 
             print(
-                type(e).__name__,
-                str(e)
+                f"⚠️ Bölüm {idx} "
+                f"tamamlanamadı."
             )
-
-            raw = ""
-
-        chapter_text, maybe_metadata = (
-            parse_chapter_with_metadata(
-                raw
-            )
-        )
-
-        if not chapter_text:
-
-            print(
-                f"⚠️ Bölüm {idx} boş geldi."
-            )
-
-            continue
-
-        script_parts.append(
-            chapter_text
-        )
-
-        previous_tail = (
-            chapter_text[-700:]
-        )
-
-        if is_last:
-            metadata_raw = (
-                maybe_metadata
-            )
-
-        print(
-            f"✅ Bölüm {idx}: "
-            f"{len(chapter_text.split())} kelime"
-        )
 
     # =====================================================
-    # SONUÇ
+    # EN AZ BİR BÖLÜM
     # =====================================================
 
     if not script_parts:
@@ -1657,6 +1759,10 @@ def main():
         raise SystemExit(
             "❌ Hiçbir bölüm üretilemedi."
         )
+
+    # =====================================================
+    # FULL SCRIPT
+    # =====================================================
 
     full_script = "\n\n".join(
         script_parts
@@ -1670,14 +1776,28 @@ def main():
     print(
         "================================"
     )
-
     print(
-        f"📊 Toplam kelime: "
-        f"{toplam_kelime}"
+        "📊 İÇERİK İSTATİSTİKLERİ"
+    )
+    print(
+        "================================"
     )
 
     print(
-        "================================"
+        "📝 Toplam kelime:",
+        toplam_kelime
+    )
+
+    print(
+        "📚 Başarılı bölüm:",
+        len(script_parts),
+        "/",
+        total
+    )
+
+    print(
+        "🎯 Hedef kelime:",
+        TOPLAM_HEDEF_KELIME
     )
 
     # =====================================================
@@ -1690,14 +1810,18 @@ def main():
             metadata_raw.strip()
         )
 
+        print(
+            "✅ AI metadata oluşturdu."
+        )
+
     else:
 
         print(
-            "⚠️ Metadata üretilemedi."
+            "⚠️ AI metadata oluşturamadı."
         )
 
         print(
-            "ℹ️ Varsayılan metadata kullanılıyor."
+            "➡️ Varsayılan metadata kullanılıyor."
         )
 
         metadata_text = (
@@ -1707,7 +1831,7 @@ def main():
         )
 
     # =====================================================
-    # DOSYAYI OLUŞTUR
+    # FINAL CONTENT
     # =====================================================
 
     final_content = (
@@ -1736,11 +1860,9 @@ def main():
     print(
         "================================"
     )
-
     print(
         "✅ İÇERİK OLUŞTURULDU"
     )
-
     print(
         "================================"
     )
@@ -1753,6 +1875,13 @@ def main():
     print(
         "📝 Kelime sayısı:",
         toplam_kelime
+    )
+
+    print(
+        "📚 Başarılı bölüm:",
+        len(script_parts),
+        "/",
+        total
     )
 
     print(
@@ -1774,11 +1903,11 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
 
         print(
-            "❌ İşlem kullanıcı tarafından "
+            "\n🛑 İşlem kullanıcı tarafından "
             "durduruldu."
         )
 
-        sys.exit(1)
+        sys.exit(130)
 
     except SystemExit:
 
@@ -1792,7 +1921,7 @@ if __name__ == "__main__":
         )
 
         print(
-            "❌ BEKLENMEYEN ANA HATA"
+            "❌ BEKLENMEYEN HATA"
         )
 
         print(
@@ -1800,17 +1929,9 @@ if __name__ == "__main__":
         )
 
         print(
-            "Hata türü:",
-            type(e).__name__
-        )
-
-        print(
-            "Hata:",
+            type(e).__name__,
+            ":",
             str(e)
-        )
-
-        print(
-            "================================"
         )
 
         sys.exit(1)
