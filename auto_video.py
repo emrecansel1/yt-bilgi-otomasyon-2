@@ -22,15 +22,25 @@ HEDEF_SAAT = 14
 
 def run(cmd, name):
     print()
-    print("=" * 40)
-    print(name)
-    print("=" * 40)
+    print("=" * 60)
+    print(f"🚀 {name}")
+    print("=" * 60)
 
-    result = subprocess.run(
-        cmd,
-        text=True,
-        capture_output=True
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True
+        )
+    except Exception as e:
+        print()
+        print("=" * 60)
+        print(f"❌ {name} ÇALIŞTIRILAMADI")
+        print("=" * 60)
+        print(f"❌ Hata türü: {type(e).__name__}")
+        print(f"❌ Hata: {e}")
+        print("=" * 60)
+        raise SystemExit(1)
 
     if result.stdout:
         print(result.stdout)
@@ -39,17 +49,34 @@ def run(cmd, name):
         print(result.stderr)
 
     if result.returncode != 0:
-        raise SystemExit(
-            f"❌ HATA: {name} "
-            f"(exit code {result.returncode})"
-        )
+        print()
+        print("=" * 60)
+        print(f"❌ {name} BAŞARISIZ")
+        print(f"❌ Exit code: {result.returncode}")
+        print("=" * 60)
+
+        if result.stdout:
+            print("📤 STDOUT:")
+            print(result.stdout)
+
+        if result.stderr:
+            print("📥 STDERR:")
+            print(result.stderr)
+
+        print("=" * 60)
+
+        raise SystemExit(1)
+
+    print()
+    print(f"✅ {name} BAŞARILI")
+    print("=" * 60)
 
 
 def run_optional(cmd, name):
     print()
-    print("=" * 40)
+    print("=" * 60)
     print(name)
-    print("=" * 40)
+    print("=" * 60)
 
     try:
         result = subprocess.run(
@@ -65,18 +92,25 @@ def run_optional(cmd, name):
             print(result.stderr)
 
         if result.returncode != 0:
+            print()
             print(
                 f"⚠️ {name} başarısız oldu "
                 f"(exit code {result.returncode}), "
                 f"devam ediliyor..."
             )
+
+            if result.stderr:
+                print("📥 STDERR:")
+                print(result.stderr)
+
             return False
 
         return True
 
     except Exception as e:
         print(
-            f"⚠️ {name} çalıştırılamadı: {e}"
+            f"⚠️ {name} çalıştırılamadı: "
+            f"{type(e).__name__}: {e}"
         )
         return False
 
@@ -127,7 +161,10 @@ def main():
     run(
         [
             sys.executable,
-            "generate_content.py"
+            os.path.join(
+                REPO_BASE,
+                "generate_content.py"
+            )
         ],
         "İÇERİK MOTORU"
     )
@@ -155,7 +192,10 @@ def main():
     run(
         [
             sys.executable,
-            "voiceover.py",
+            os.path.join(
+                REPO_BASE,
+                "voiceover.py"
+            ),
             CONTENT,
             VOICE
         ],
@@ -176,7 +216,10 @@ def main():
     run(
         [
             sys.executable,
-            "get_visuals.py"
+            os.path.join(
+                REPO_BASE,
+                "get_visuals.py"
+            )
         ],
         "GÖRSEL MOTORU"
     )
@@ -227,8 +270,13 @@ def main():
         "_auto_visual.py"
     )
 
+    unique_visual_script = os.path.join(
+        REPO_BASE,
+        "unique_visual_video.py"
+    )
+
     with open(
-        "unique_visual_video.py",
+        unique_visual_script,
         encoding="utf-8"
     ) as f:
         code = f.read()
@@ -335,7 +383,10 @@ def main():
     thumb_ok = run_optional(
         [
             sys.executable,
-            "thumbnail_generator.py"
+            os.path.join(
+                REPO_BASE,
+                "thumbnail_generator.py"
+            )
         ],
         "THUMBNAIL MOTORU"
     )
@@ -348,7 +399,6 @@ def main():
             "✅ Thumbnail hazır:",
             THUMBNAIL
         )
-
     else:
         print(
             "⚠️ Thumbnail oluşturulamadı, "
@@ -363,7 +413,10 @@ def main():
     run(
         [
             sys.executable,
-            "upload_youtube.py"
+            os.path.join(
+                REPO_BASE,
+                "upload_youtube.py"
+            )
         ],
         "YOUTUBE YÜKLEYİCİ"
     )
