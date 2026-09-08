@@ -28,7 +28,6 @@ ORNEK_KONULAR = """
 - Ludwig Boltzmann'ın bilim camiası tarafından dışlanıp intihar etmesi
 - Barbara McClintock'un keşfinin 30 yıl sonra kabul edilmesi
 - Galileo'nun kilise tarafından yargılanıp susturulması
-- Giordano Bruno'nun fikirleri yüzünden diri diri yakılması
 - Évariste Galois'nın 20 yaşında düelloda ölmesi
 - Vera Rubin'in karanlık madde keşfinin yıllarca göz ardı edilmesi
 - Jocelyn Bell Burnell'in pulsar keşfinde göz ardı edilmesi
@@ -37,14 +36,12 @@ ORNEK_KONULAR = """
 - Katherine Johnson'un ırkçılığa rağmen NASA'da yükselmesi
 - Srinivasa Ramanujan'ın İngiltere'de yalnızlıktan hastalanması
 - Kurt Gödel'in paranoyadan açlıktan ölmesi
-- John Nash'in şizofreniyle mücadelesi
 - Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
 """
 
 
 def clean_text(text):
     text = re.sub(r"\[[^\]]*\]", "", text or "")
-    text = re.sub(r"\([^)]*\)", "", text or "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -53,7 +50,8 @@ def load_history():
     if os.path.exists(TOPIC_HISTORY_FILE):
         try:
             with open(TOPIC_HISTORY_FILE, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data if isinstance(data, list) else []
         except Exception:
             return []
     return []
@@ -68,12 +66,15 @@ def save_history(history):
 def is_valid_topic(topic):
     if not topic:
         return False
-    if len(topic) < 8 or len(topic) > 200:
+
+    topic = topic.strip()
+
+    if len(topic) < 8 or len(topic) > 350:
         return False
-    if not re.search(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", topic):
-        return False
+
     if len(topic.split()) < 2:
         return False
+
     return True
 
 
@@ -90,127 +91,103 @@ def call_gemini_with_retry(prompt, max_retries=5):
             response = requests.post(
                 url,
                 params={"key": API_KEY},
-                json={"contents": [{"parts": [{"text": prompt}]}]},
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt
+                                }
+                            ]
+                        }
+                    ]
+                },
                 timeout=120
             )
 
-            if response.status_code in (429, 503):
-                print(f"   ⏳ Gemini meşgul (HTTP {response.status_code}), "
-                      f"{delay} sn bekleyip tekrar denenecek "
-                      f"({attempt}/{max_retries})...")
+            if response.status_code in (429, 500, 502, 503, 504):
+                print(
+                    f"   ⏳ Gemini meşgul/hata (HTTP {response.status_code}), "
+                    f"{delay} sn bekleyip tekrar denenecek "
+                    f"({attempt}/{max_retries})..."
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
                 continue
 
             response.raise_for_status()
+
             data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+            try:
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError):
+                print("   ⚠️ Gemini boş/geçersiz cevap döndürdü.")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
 
         except requests.exceptions.RequestException as e:
-            print(f"   ⚠️ Gemini isteği hatası: {e}, "
-                  f"{delay} sn bekleyip tekrar denenecek "
-                  f"({attempt}/{max_retries})...")
+            print(
+                f"   ⚠️ Gemini isteği hatası: {e}, "
+                f"{delay} sn bekleyip tekrar denenecek "
+                f"({attempt}/{max_retries})..."
+            )
             time.sleep(delay)
             delay = min(delay * 2, 60)
 
-    raise RuntimeError("Gemini API'ye ulaşılamadı (tüm denemeler başarısız).")
+    raise RuntimeError(
+        "Gemini API'ye ulaşılamadı (tüm denemeler başarısız)."
+    )
 
 
 def generate(avoid_list_text):
 
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı Türkçe bilgi YouTube kanalının
-Shorts konu bulan VE içerik yazan editörüsün. Bu tek istekte
-HEM konuyu seçeceksin HEM de o konu için Shorts metnini
-yazacaksın.
+Shorts konu bulan VE içerik yazan editörüsün.
 
-KANALIN NİŞİ:
+Tek istekte hem konuyu seç hem de metni yaz.
 
-Kanal artık SADECE bilim insanlarının, mucitlerin ve
-kaşiflerin İNSANİ VE DRAMATİK HİKAYELERİNE odaklanıyor.
-Kuru bilgi anlatımı değil; bir bilim insanının yaşadığı
-haksızlık, trajedi, mücadele, görmezden gelinme, ölüm,
-yalnızlık veya geç kabul görme hikayesi anlatılacak.
+KANAL NİŞİ:
 
-Amaç izleyicide GERÇEK BİR DUYGUSAL BAĞ kurmak: üzüntü,
-hayranlık, öfke (haksızlığa karşı) veya ilham.
+Kanal sadece bilim insanlarının, mucitlerin ve kaşiflerin
+İNSANİ VE DRAMATİK HİKAYELERİNE odaklanıyor.
 
-ÖRNEK KONU TARZLARI (birebir kopyalama, ilham al,
-farklı isimler/olaylar sec):
+Hikayelerde haksızlık, trajedi, mücadele, görmezden gelinme,
+yalnızlık, başarısızlık veya geç gelen başarı gibi güçlü
+insani unsurlar bulunabilir.
+
+ÖRNEK KONU TARZLARI:
 {ORNEK_KONULAR}
 
-1. ADIM - KONU SEÇ:
-İzleyicinin "vay be, bunu bilmiyordum" diyeceği, çarpıcı,
-meraklandırıcı, GERÇEK ve DOĞRULANABİLİR TEK BİR bilim
-insanı/mucit/kaşif hikayesi seç. Konu MUTLAKA yukarıdaki
-nişe (dramatik bilim insanı hikayesi) uymalı. Genel tarih,
-uzay, hayvanlar, günlük eşyalar gibi başka konu türlerine
-kayma.
-
-KESİNLİKLE ŞU DAHA ÖNCE KULLANILAN KONULARI TEKRAR SEÇME
-(bunlara çok benzer/aynı konuları da seçme):
+DAHA ÖNCE KULLANILAN KONULAR:
 {avoid_list_text}
 
-2. ADIM - METNİ YAZ:
-Seçtiğin konu hakkında 15-30 saniyede seslendirilebilecek,
-kısa ve son derece çarpıcı bir YouTube Shorts anlatım metni
-oluştur.
+KESİNLİKLE bu listedeki konuları veya çok benzerlerini seçme.
 
-AMAÇ:
-İzleyicinin daha ilk cümlede durup videoyu izlemeye devam
-etmesini sağlamak. İzleyici hiçbir anda sıkılıp kaydırmamalı.
-Metin boyunca kişinin insani tarafını (korku, umut, acı,
-haksızlık, zafer) hissettir.
-
-ÇOK ÖNEMLİ:
-- Bilgi uydurma, tarihi ve bilimsel gerçeklere sadık kal.
-- Doğrulanamayan bilgiyi kesin gerçek gibi sunma.
-- Gazete/haber dili kullanma, sıcak bir anlatıcı gibi konuş.
-- Gereksiz detaya girme, sadece en çarpıcı 1-2 bilgiye odaklan.
-- Konuyla alakasız hiçbir şey ekleme.
-- Siyasi propaganda, savaş suçluları, diktatörler, hakaret veya
-  kışkırtıcı dil/içerik kullanma.
-
-KANAL TARZI:
-- Türkçe.
-- Doğal, akıcı, sıcak anlatıcı sesi.
-- Kısa ve vurucu cümleler.
-- İLK CÜMLE bir soru, şaşırtıcı bir gerçek veya çarpıcı bir
-  iddia ile başlamalı ve izleyiciyi anında yakalamalı.
-- KESİNLİKLE ŞU AÇILIŞLARI KULLANMA: "Biliyor muydunuz ki", "Az
-  bilinen bir gerçek", "Şunu biliyor musun", "İşte size ...
-  hakkında X şey", "Bugün size ... anlatacağım", "Hazır
-  mısınız", herhangi bir selamlama veya kanal/konu tanıtımıyla
-  başlamak.
-- Bunun yerine şu açılış tarzlarından birini kullan (her
-  seferinde farklısını dene):
-  1) Doğrudan şok edici bir iddiayla aç.
-  2) Beklenmedik bir soruyla aç, "biliyor musunuz" kalıbını
-     kullanmadan.
-  3) Ortadan başlayan bir sahneyle aç.
-- Açılış cümlesi en fazla 8-10 kelime olsun, tek nefeste
-  söylenebilmeli.
-- "Merhaba arkadaşlar" gibi giriş yapma.
-- Video ortasında hiç durgunluk olmasın.
-- SON CÜMLE izleyicide "bir daha izlemek" hissi uyandırmalı,
-  mümkünse ("loop-friendly") bir çarpıcı kapanışla bitsin.
-- Kamera/sahne açıklaması, müzik/efekt, parantez içi açıklama
-  yazma.
-
-BAŞLIK:
-- Özgün, merak uyandıran, ama yanıltıcı clickbait olmayan.
-- Videoda anlatılmayan şeyi vaat etmemeli.
+KONU:
+Gerçek ve doğrulanabilir tek bir bilim insanı, mucit veya
+kaşif hikayesi seç.
 
 METİN:
-Yaklaşık 40-75 kelime (15-30 saniyelik seslendirmeye uygun).
-Sadece anlatıcının okuyacağı cümlelerden oluşsun.
+40-75 kelime arasında Türkçe Shorts metni yaz.
+İlk cümle çok güçlü bir soru, şaşırtıcı gerçek veya çarpıcı
+iddia olsun.
+İlk cümle 8-10 kelimeyi geçmesin.
+Kısa ve vurucu cümleler kullan.
+Doğrulanmamış bilgi uydurma.
+Parantez, sahne açıklaması, kamera açıklaması veya efekt yazma.
+"Merhaba arkadaşlar", "Biliyor muydunuz ki" gibi girişler kullanma.
+
+BAŞLIK:
+Merak uyandırıcı ama yanıltıcı olmayan Türkçe başlık.
 
 AÇIKLAMA:
-Videonun ne anlattığını 1-2 kısa cümleyle açıkla.
+1-2 kısa Türkçe cümle.
 
 ETİKETLER:
-8-12 adet alakalı Türkçe etiket, virgülle ayrılmış, hashtag (#)
-kullanma.
+8-12 adet Türkçe etiket, virgülle ayrılmış.
+# kullanma.
 
 ÇIKTIYI TAM OLARAK ŞU FORMATTA VER:
 
@@ -238,7 +215,7 @@ def parse(text):
     text = clean_text(text)
 
     def extract(field, next_field):
-        pattern = rf"{field}:\s*(.*?)(?=\s*{next_field}:|$)"
+        pattern = rf"{field}\s*:\s*(.*?)(?=\s*{next_field}\s*:|$)"
         m = re.search(pattern, text, re.I | re.S)
         return m.group(1).strip() if m else ""
 
@@ -247,18 +224,8 @@ def parse(text):
     script = extract("METİN", "AÇIKLAMA")
     description = extract("AÇIKLAMA", "ETİKETLER")
 
-    m = re.search(r"ETİKETLER:\s*(.*)", text, re.I | re.S)
+    m = re.search(r"ETİKETLER\s*:\s*(.*)", text, re.I | re.S)
     tags = m.group(1).strip() if m else ""
-
-    if not script:
-        script = text
-
-    words = len(script.split())
-
-    if words < 30:
-        print("[UYARI] Metin çok kısa:", words, "kelime")
-    if words > 100:
-        print("[UYARI] Metin çok uzun:", words, "kelime")
 
     return {
         "topic": topic,
@@ -266,7 +233,7 @@ def parse(text):
         "script": script,
         "description": description,
         "tags": tags,
-        "word_count": words
+        "word_count": len(script.split())
     }
 
 
@@ -277,33 +244,53 @@ def main():
     print("=" * 60)
 
     history = load_history()
-    avoid_list_text = "\n".join(f"- {t}" for t in history) if history else "(henüz yok)"
+
+    avoid_list_text = (
+        "\n".join(f"- {t}" for t in history)
+        if history
+        else "(henüz yok)"
+    )
 
     parsed = None
 
     for attempt in range(3):
+
         try:
             raw = generate(avoid_list_text)
             candidate = parse(raw)
 
+            topic = candidate["topic"].strip()
+            script = candidate["script"].strip()
+
+            history_lower = [
+                x.strip().lower()
+                for x in history
+            ]
+
             if (
-                candidate["topic"]
-                and is_valid_topic(candidate["topic"])
-                and candidate["topic"] not in history
-                and candidate["script"]
+                is_valid_topic(topic)
+                and script
+                and len(script.split()) >= 25
+                and topic.lower() not in history_lower
             ):
                 parsed = candidate
                 break
 
-            print(f"   ⚠️ Geçersiz/tekrar konu veya boş metin geldi "
-                  f"({candidate.get('topic')!r}), yeniden deneniyor...")
+            print(
+                f"   ⚠️ Geçersiz/tekrar konu veya boş metin geldi "
+                f"({topic!r}), yeniden deneniyor..."
+            )
 
         except Exception as e:
             print("   ⚠️ Üretim hatası:", e)
-            time.sleep(5)
+
+            if attempt < 2:
+                time.sleep(5)
 
     if not parsed:
-        raise SystemExit("❌ Yapay zeka geçerli bir konu+içerik üretemedi.")
+        raise SystemExit(
+            "❌ Yapay zeka geçerli bir konu+içerik üretemedi."
+        )
 
     print()
     print("🎯 Konu:", parsed["topic"])
@@ -314,6 +301,7 @@ def main():
     save_history(history)
 
     os.makedirs(OUT, exist_ok=True)
+
     with open(TOPIC_FILE, "w", encoding="utf-8") as f:
         f.write(parsed["topic"])
 
@@ -324,7 +312,12 @@ def main():
     }
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+        json.dump(
+            result,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
     print()
     print("=" * 60)
