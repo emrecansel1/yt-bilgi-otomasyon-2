@@ -2,6 +2,8 @@ import os
 import json
 import random
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -14,8 +16,6 @@ META_FILE = os.path.join(OUT, "shorts_meta.json")
 CONFIG = "config.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
-# Açıklamaya #Shorts ile birlikte eklenecek sabit hashtag havuzu.
-# Her yüklemede havuzdan rastgele birkaç tanesi seçilir, hep aynısı olmasın diye.
 EK_HASHTAG_HAVUZU = [
     "#tarih",
     "#bilim",
@@ -62,31 +62,78 @@ def secili_ek_hashtagler():
     return " ".join(secim)
 
 
+def get_credentials():
+    if not os.path.exists(TOKEN):
+        raise SystemExit(
+            "❌ token.json bulunamadı. "
+            "YouTube OAuth yetkilendirmesi gerekli."
+        )
+
+    try:
+        with open(TOKEN, encoding="utf-8") as f:
+            token_data = json.load(f)
+
+        creds = Credentials.from_authorized_user_info(
+            token_data,
+            SCOPES
+        )
+
+    except Exception as e:
+        raise SystemExit(
+            f"❌ token.json okunamadı: {e}"
+        )
+
+    if creds.valid:
+        return creds
+
+    if not creds.refresh_token:
+        raise SystemExit(
+            "❌ YouTube token geçersiz ve refresh token yok.\n"
+            "Yeni OAuth token oluşturman gerekiyor."
+        )
+
+    try:
+        print("🔄 YouTube token yenileniyor...")
+        creds.refresh(Request())
+
+    except RefreshError as e:
+        print()
+        print("=" * 60)
+        print("❌ YOUTUBE OAUTH TOKEN GEÇERSİZ")
+        print("=" * 60)
+        print("Google token'ı süresi dolmuş veya iptal edilmiş.")
+        print()
+        print("Yeni token.json oluşturup GitHub Secret'ı güncelle.")
+        print()
+        print("Hata:", e)
+        print("=" * 60)
+
+        raise SystemExit(1)
+
+    # Yenilenen token'ı kaydet
+    try:
+        with open(TOKEN, "w", encoding="utf-8") as f:
+            f.write(creds.to_json())
+
+        print("✅ Token yenilendi ve kaydedildi.")
+
+    except Exception as e:
+        print("⚠️ Yenilenen token kaydedilemedi:", e)
+
+    return creds
+
+
 def upload():
     print("=" * 40)
     print("📱 YOUTUBE SHORTS YÜKLEYİCİ")
     print("=" * 40)
 
-    if not os.path.exists(TOKEN):
-        raise SystemExit("❌ token.json bulunamadı.")
-
     if not os.path.exists(VIDEO):
-        raise SystemExit(f"❌ Video bulunamadı: {VIDEO}")
+        raise SystemExit(
+            f"❌ Video bulunamadı: {VIDEO}"
+        )
 
-    with open(TOKEN, encoding="utf-8") as f:
-        token_data = json.load(f)
-
-    creds = Credentials.from_authorized_user_info(
-        token_data,
-        SCOPES
-    )
-
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request
-            creds.refresh(Request())
-        else:
-            raise SystemExit("❌ YouTube token geçersiz veya yenilenemiyor.")
+    creds = get_credentials()
 
     youtube = build(
         "youtube",
@@ -109,14 +156,16 @@ def upload():
     description = meta.get("description", "").strip()
 
     if not description:
-        description = "Bilim, tarih ve dünyadan ilginç bilgiler."
+        description = (
+            "Bilim, tarih ve dünyadan ilginç bilgiler."
+        )
 
     ek_hashtagler = secili_ek_hashtagler()
 
     if "#shorts" not in description.lower():
-        description = description + "\n\n#Shorts " + ek_hashtagler
+        description += "\n\n#Shorts " + ek_hashtagler
     else:
-        description = description + "\n\n" + ek_hashtagler
+        description += "\n\n" + ek_hashtagler
 
     raw_tags = meta.get("tags", "")
 
@@ -143,7 +192,10 @@ def upload():
             "description": description,
             "tags": tags,
             "categoryId": str(
-                youtube_config.get("category_id", "27")
+                youtube_config.get(
+                    "category_id",
+                    "27"
+                )
             ),
             "defaultLanguage": "tr",
             "defaultAudioLanguage": "tr"
@@ -207,3 +259,8 @@ def upload():
 
 if __name__ == "__main__":
     upload()
+
+
+Ama önemli: Bunu yapıştırmak tek başına mevcut hatayı çözmez. token.json gerçekten revoked/expired olmuş.
+
+Yani şimdi yapman gereken yeni token.json oluşturup GitHub'daki token secret'ını güncellemek. upload_youtube_shorts.py tarafı artık hazır.
