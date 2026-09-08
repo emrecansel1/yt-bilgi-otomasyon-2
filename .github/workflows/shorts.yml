@@ -67,6 +67,7 @@ jobs:
           sudo ldconfig
 
           echo "=== MODEL DOSYASI ARANIYOR ==="
+
           MODEL_FILE=""
 
           for f in \
@@ -96,7 +97,7 @@ jobs:
 
       - name: YouTube token oluştur
         env:
-          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
+          TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
         run: |
           set -euo pipefail
 
@@ -108,19 +109,19 @@ jobs:
 
           p = Path("token.json")
 
-          print("🔐 TOKEN_JSON boyutu:", p.stat().st_size, "byte")
+          print("🔐 TOKEN boyutu:", p.stat().st_size, "byte")
 
           if p.stat().st_size == 0:
-              print("❌ TOKEN_JSON secret BOŞ!")
+              print("❌ YOUTUBE_TOKEN_JSON secret boş!")
               raise SystemExit(1)
 
           try:
               data = json.loads(p.read_text(encoding="utf-8"))
           except Exception:
-              print("❌ TOKEN_JSON geçerli JSON değil!")
+              print("❌ TOKEN geçerli JSON değil!")
               raise SystemExit(1)
 
-          print("✅ TOKEN_JSON geçerli JSON")
+          print("✅ TOKEN geçerli JSON")
           print("🔑 Access token:", bool(data.get("token")))
           print("🔄 Refresh token:", bool(data.get("refresh_token")))
 
