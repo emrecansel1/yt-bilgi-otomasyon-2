@@ -4,12 +4,9 @@ permissions:
   contents: write
 
 on:
-  # Saatte bir calisiyordu (gunde 24 kez, 240dk timeout'a kadar) - Actions
-  # dakika kotasini ve Gemini API kotasini devirip hesabi faturalama
-  # kilidine soktu. run_every_3h.sh'deki orijinal niyete uygun sekilde
-  # 3 saatte bire (gunde 8) cekildi.
+  # Kullanici tercihi: uzun video gunde 1 kez.
   schedule:
-    - cron: '20 */3 * * *'
+    - cron: '20 6 * * *'
   workflow_dispatch:
 
 jobs:
