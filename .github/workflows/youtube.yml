@@ -4,8 +4,12 @@ permissions:
   contents: write
 
 on:
+  # Saatte bir calisiyordu (gunde 24 kez, 240dk timeout'a kadar) - Actions
+  # dakika kotasini ve Gemini API kotasini devirip hesabi faturalama
+  # kilidine soktu. run_every_3h.sh'deki orijinal niyete uygun sekilde
+  # 3 saatte bire (gunde 8) cekildi.
   schedule:
-    - cron: '20 * * * *'
+    - cron: '20 */3 * * *'
   workflow_dispatch:
 
 jobs:

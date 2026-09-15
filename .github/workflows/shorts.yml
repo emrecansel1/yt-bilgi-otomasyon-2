@@ -4,8 +4,11 @@ permissions:
   contents: write
 
 on:
+  # Saatte bir calisiyordu (gunde 24 kez) - Actions dakika kotasini ve
+  # Gemini API kotasini devirip hesabi faturalama kilidine soktu. 2 saatte
+  # bire (gunde 12) cekildi.
   schedule:
-    - cron: '15 * * * *'
+    - cron: '15 */2 * * *'
   workflow_dispatch:
 
 jobs:
