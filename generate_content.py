@@ -776,6 +776,20 @@ uyarlayarak, birebir kopyalama):
 abartısız ama merak uyandıran bir
 başlık yaz.
 
+KISA_BASLIK:
+Thumbnail (kapak görseli) üzerine
+yazılacak, 2 ile 4 kelime arasında,
+BÜYÜK HARFLE, çok kısa ve çok güçlü
+bir merak/şok ifadesi yaz.
+
+Örnek stil: "GİZLİ GERÇEK", "SAKLANAN
+SIR", "ÇILDIRTAN KEŞİF", "YASAKLI
+BİLGİ", "İNANILMAZ İTİRAF".
+
+Konunun kişisine/olayına özel olsun,
+jenerik olmasın. Noktalama işareti
+kullanma.
+
 AÇIKLAMA:
 3-5 cümlelik açıklama. İlk cümle de
 merak uyandırıcı olsun.
@@ -793,6 +807,9 @@ def default_metadata(topic):
     return f"""
 BAŞLIK:
 {topic}
+
+KISA_BASLIK:
+GİZLİ GERÇEK
 
 AÇIKLAMA:
 {topic} hakkında gerçek olaylara dayanan
