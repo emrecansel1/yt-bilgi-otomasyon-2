@@ -12,10 +12,26 @@ OUTPUT_FILE = os.path.join(BASE, "shorts_content.json")
 TOPIC_FILE = os.path.join(OUT, "shorts_topic.txt")
 TOPIC_HISTORY_FILE = os.path.join(BASE, "shorts_topic_history.json")
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
+def _load_gemini_keys():
+    keys = []
 
-if not API_KEY:
+    primary = os.environ.get("GEMINI_API_KEY", "").strip()
+    if primary:
+        keys.append(primary)
+
+    for i in range(2, 7):
+        extra = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
+        if extra:
+            keys.append(extra)
+
+    return keys
+
+GEMINI_API_KEYS = _load_gemini_keys()
+
+if not GEMINI_API_KEYS:
     raise RuntimeError("GEMINI_API_KEY bulunamadı.")
+
+print(f"✅ {len(GEMINI_API_KEYS)} adet GEMINI_API_KEY mevcut.")
 
 MAX_HISTORY = 60
 
@@ -39,12 +55,10 @@ ORNEK_KONULAR = """
 - Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
 """
 
-
 def clean_text(text):
     text = re.sub(r"\[[^\]]*\]", "", text or "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
-
 
 def load_history():
     if os.path.exists(TOPIC_HISTORY_FILE):
@@ -56,12 +70,10 @@ def load_history():
             return []
     return []
 
-
 def save_history(history):
     history = history[-MAX_HISTORY:]
     with open(TOPIC_HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
-
 
 def is_valid_topic(topic):
     if not topic:
@@ -77,68 +89,94 @@ def is_valid_topic(topic):
 
     return True
 
+_exhausted_key_indexes = set()
+_active_key_index = 0
 
-def call_gemini_with_retry(prompt, max_retries=5):
+def call_gemini_with_retry(prompt, max_retries=3):
     url = (
         "https://generativelanguage.googleapis.com/"
         "v1beta/models/gemini-3.6-flash:generateContent"
     )
 
-    delay = 5
+    global _active_key_index
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            response = requests.post(
-                url,
-                params={"key": API_KEY},
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt
-                                }
-                            ]
-                        }
-                    ]
-                },
-                timeout=120
-            )
+    total_keys = len(GEMINI_API_KEYS)
+    keys_tried = 0
 
-            if response.status_code in (429, 500, 502, 503, 504):
+    while keys_tried < total_keys:
+
+        if _active_key_index in _exhausted_key_indexes:
+            _active_key_index = (_active_key_index + 1) % total_keys
+            keys_tried += 1
+            continue
+
+        api_key = GEMINI_API_KEYS[_active_key_index]
+        key_label = f"key {_active_key_index + 1}/{total_keys}"
+        delay = 5
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(
+                    url,
+                    params={"key": api_key},
+                    json={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": prompt
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    timeout=120
+                )
+
+                if response.status_code == 429:
+                    print(
+                        f"   ⚠️ Gemini kota doldu ({key_label}), "
+                        f"sıradaki key'e geçiliyor."
+                    )
+                    _exhausted_key_indexes.add(_active_key_index)
+                    break
+
+                if response.status_code in (500, 502, 503, 504):
+                    print(
+                        f"   ⏳ Gemini meşgul/hata (HTTP {response.status_code}, "
+                        f"{key_label}), {delay} sn bekleyip tekrar denenecek "
+                        f"({attempt}/{max_retries})..."
+                    )
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60)
+                    continue
+
+                response.raise_for_status()
+
+                data = response.json()
+
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError):
+                    print("   ⚠️ Gemini boş/geçersiz cevap döndürdü.")
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60)
+
+            except requests.exceptions.RequestException as e:
                 print(
-                    f"   ⏳ Gemini meşgul/hata (HTTP {response.status_code}), "
+                    f"   ⚠️ Gemini isteği hatası: {e} ({key_label}), "
                     f"{delay} sn bekleyip tekrar denenecek "
                     f"({attempt}/{max_retries})..."
                 )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
-                continue
 
-            response.raise_for_status()
-
-            data = response.json()
-
-            try:
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError, TypeError):
-                print("   ⚠️ Gemini boş/geçersiz cevap döndürdü.")
-                time.sleep(delay)
-                delay = min(delay * 2, 60)
-
-        except requests.exceptions.RequestException as e:
-            print(
-                f"   ⚠️ Gemini isteği hatası: {e}, "
-                f"{delay} sn bekleyip tekrar denenecek "
-                f"({attempt}/{max_retries})..."
-            )
-            time.sleep(delay)
-            delay = min(delay * 2, 60)
+        keys_tried += 1
+        _active_key_index = (_active_key_index + 1) % total_keys
 
     raise RuntimeError(
-        "Gemini API'ye ulaşılamadı (tüm denemeler başarısız)."
+        "Gemini API'ye ulaşılamadı (tüm key'ler ve denemeler başarısız)."
     )
-
 
 def generate(avoid_list_text):
 
@@ -209,7 +247,6 @@ ETİKETLER:
 
     return call_gemini_with_retry(prompt)
 
-
 def parse(text):
 
     text = clean_text(text)
@@ -235,7 +272,6 @@ def parse(text):
         "tags": tags,
         "word_count": len(script.split())
     }
-
 
 def main():
 
@@ -324,7 +360,6 @@ def main():
     print("SHORTS İÇERİĞİ TAMAMLANDI (1 Gemini isteğiyle)")
     print("=" * 60)
     print("Dosya:", OUTPUT_FILE)
-
 
 if __name__ == "__main__":
     main()
