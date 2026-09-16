@@ -103,6 +103,9 @@ ORNEK_KONULAR = """
 - Katherine Johnson'un NASA'daki bilimsel çalışmaları
 - Srinivasa Ramanujan'ın olağanüstü matematik hayatı
 - Antoine Lavoisier'in bilimsel çalışmaları ve trajik sonu
+- Isaac Newton'un simya takıntısı ve gizli çalışmaları
+- Einstein'ın görelilik kuramına giden yalnız yılları
+- Darwin'in kilise ile yaşadığı fikir çatışması
 """
 
 # =========================================================
@@ -541,6 +544,15 @@ başarısızlık, geç tanınma, keşif,
 zafer veya trajedi gibi gerçek
 unsurlar kullanılabilir.
 
+Konuyu seçerken hem çok tanınan
+isimleri (Einstein, Tesla, Newton,
+Darwin, Curie gibi) hem de daha az
+bilinen ama çarpıcı hikayeleri
+dengeli şekilde kullan. Tanınan bir
+isim seçersen, herkesin bildiği
+genel hikayeyi değil, az bilinen
+ve şaşırtıcı bir yönünü anlat.
+
 ÖRNEK KONU TARZLARI:
 
 {ORNEK_KONULAR}
@@ -744,11 +756,29 @@ KONU:
 Şu formatı kullan:
 
 BAŞLIK:
-Merak uyandırıcı fakat yanıltıcı
-olmayan YouTube başlığı.
+Güçlü bir merak açığı (curiosity gap)
+yaratan, tıklatmaya zorlayan ama
+yanıltıcı olmayan YouTube başlığı yaz.
+
+Video içeriğiyle tutarlı olsun,
+gerçek olmayan bir iddia yazma.
+
+Şu tarz kalıplardan ilham al (konuya
+uyarlayarak, birebir kopyalama):
+
+- "Bilim Dünyasının Yıllarca Sakladığı Gerçek"
+- "Kimsenin Konuşmak İstemediği Hikaye"
+- "Onu Çıldırtan Keşif"
+- "Bilim İnsanlarının İnanmak İstemediği Şey"
+- "Neden Yıllarca Unutulmaya Çalışıldı?"
+
+60-90 karakter civarında, tek satır,
+abartısız ama merak uyandıran bir
+başlık yaz.
 
 AÇIKLAMA:
-3-5 cümlelik açıklama.
+3-5 cümlelik açıklama. İlk cümle de
+merak uyandırıcı olsun.
 
 ETİKETLER:
 15-25 Türkçe etiket, virgülle ayrılmış.
