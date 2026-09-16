@@ -217,15 +217,14 @@ jobs:
           GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
           GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          CEREBRAS_API_KEY_2: ${{ secrets.CEREBRAS_API_KEY_2 }}
+          CEREBRAS_API_KEY_3: ${{ secrets.CEREBRAS_API_KEY_3 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -eu
-
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "⚠️ GEMINI_API_KEY bulunamadi."
-          else
-            echo "✅ GEMINI_API_KEY mevcut."
-          fi
 
           KEY_COUNT=0
           for v in "$GEMINI_API_KEY" "$GEMINI_API_KEY_2" "$GEMINI_API_KEY_3" "$GEMINI_API_KEY_4" "$GEMINI_API_KEY_5" "$GEMINI_API_KEY_6"; do
@@ -233,13 +232,23 @@ jobs:
               KEY_COUNT=$((KEY_COUNT + 1))
             fi
           done
-          echo "🧠 Toplam Gemini key sayısı: $KEY_COUNT"
+          echo "🧠 Gemini key sayısı: $KEY_COUNT"
 
-          if [ -z "$CEREBRAS_API_KEY" ]; then
-            echo "⚠️ CEREBRAS_API_KEY bulunamadi."
-          else
-            echo "✅ CEREBRAS_API_KEY mevcut."
-          fi
+          KEY_COUNT=0
+          for v in "$CEREBRAS_API_KEY" "$CEREBRAS_API_KEY_2" "$CEREBRAS_API_KEY_3"; do
+            if [ -n "$v" ]; then
+              KEY_COUNT=$((KEY_COUNT + 1))
+            fi
+          done
+          echo "🧠 Cerebras key sayısı: $KEY_COUNT"
+
+          KEY_COUNT=0
+          for v in "$GROQ_API_KEY" "$GROQ_API_KEY_2" "$GROQ_API_KEY_3"; do
+            if [ -n "$v" ]; then
+              KEY_COUNT=$((KEY_COUNT + 1))
+            fi
+          done
+          echo "🧠 Groq key sayısı: $KEY_COUNT"
 
           if [ -z "$NVIDIA_API_KEY" ]; then
             echo "⚠️ NVIDIA_API_KEY bulunamadi."
@@ -257,6 +266,11 @@ jobs:
           GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
           GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          CEREBRAS_API_KEY_2: ${{ secrets.CEREBRAS_API_KEY_2 }}
+          CEREBRAS_API_KEY_3: ${{ secrets.CEREBRAS_API_KEY_3 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
