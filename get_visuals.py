@@ -27,7 +27,7 @@ WORDS_PER_SCENE = 130
 os.makedirs(VISUALS, exist_ok=True)
 
 session = requests.Session()
-session.headers.update({"User-Agent": "YTBilgiUzun/11.0"})
+session.headers.update({"User-Agent": "YTBilgiUzun/12.0"})
 
 GENERIC_FALLBACK_QUERIES_EN = [
     "old vintage photo history",
@@ -42,7 +42,6 @@ GENERIC_FALLBACK_QUERIES_EN = [
     "old book library",
 ]
 
-
 def load_used_visuals():
     if os.path.exists(USED_VISUALS_FILE):
         try:
@@ -53,7 +52,6 @@ def load_used_visuals():
             return set(), set()
     return set(), set()
 
-
 def save_used_visuals(used_urls, used_hashes):
     # Asla kısaltma yapılmıyor - hiçbir görsel asla tekrar kullanılmasın diye
     # tüm geçmiş sonsuza kadar saklanıyor.
@@ -62,7 +60,6 @@ def save_used_visuals(used_urls, used_hashes):
             {"urls": list(used_urls), "hashes": list(used_hashes)},
             f, ensure_ascii=False, indent=2
         )
-
 
 def clean_text(text):
     text = re.sub(r"===.*?===", " ", text)
@@ -74,7 +71,6 @@ def clean_text(text):
     text = re.sub(r"^\s*(DIŞ SES|ANLATICI|SES)\s*[:\-]\s*", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
-
 
 def get_topic():
     if os.path.exists(TOPIC_FILE):
@@ -97,7 +93,6 @@ def get_topic():
 
     return "tarih bilim"
 
-
 def get_narration_text():
     with open(CONTENT, "r", encoding="utf-8") as f:
         text = f.read()
@@ -108,7 +103,6 @@ def get_narration_text():
         text = text.split("=== METADATA ===", 1)[0]
 
     return clean_text(text)
-
 
 def chunk_into_scenes(text, words_per_scene=WORDS_PER_SCENE):
     sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -134,7 +128,6 @@ def chunk_into_scenes(text, words_per_scene=WORDS_PER_SCENE):
         scenes.append(" ".join(current))
 
     return [s for s in scenes if len(s) > 20]
-
 
 def call_gemini_with_retry(prompt, max_retries=3, timeout=60):
     if not GEMINI_API_KEY:
@@ -170,7 +163,6 @@ def call_gemini_with_retry(prompt, max_retries=3, timeout=60):
             delay = min(delay * 2, 20)
 
     return None
-
 
 def call_nvidia_with_retry(prompt, max_retries=2, timeout=60):
     if not NVIDIA_API_KEY:
@@ -214,7 +206,6 @@ def call_nvidia_with_retry(prompt, max_retries=2, timeout=60):
 
     return None
 
-
 def generate_visual_queries_batch(scenes, topic):
     numbered = "\n".join(f"{i}: {s[:180]}" for i, s in enumerate(scenes, 1))
 
@@ -223,7 +214,7 @@ Konu: {topic}
 
 Aşağıda numaralandırılmış {len(scenes)} adet Türkçe belgesel
 metni parçası var. Her parça için, o parçanın anlattığı
-olayı/nesneyi/yeri/kişiyi/dönemi stok fotoğraf sitesinde
+olayı/nesneyi/yeri/kişiyi/dönemi stok görsel/video sitesinde
 aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
 İngilizce arama sorgusu yaz.
 
@@ -275,12 +266,62 @@ KURALLAR:
 
     return results
 
-
 def make_fallback_query(topic, scene):
     scene_short = scene[:250]
     en = f"{topic[:70]} {scene_short[:120]} historical documentary"
     return en[:180]
 
+def pexels_video_search(query):
+    key = os.environ.get("PEXELS_API_KEY")
+    if not key:
+        return []
+    url = "https://api.pexels.com/videos/search"
+    headers = {"Authorization": key}
+    params = {"query": query, "per_page": 15, "orientation": "landscape"}
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        results = []
+        for video in data.get("videos", []):
+            files = video.get("video_files", [])
+            best = None
+            for vf in files:
+                w = vf.get("width") or 0
+                if w >= 1280 and vf.get("link"):
+                    if best is None or w < best.get("width", 999999):
+                        best = vf
+            if not best and files:
+                best = files[0]
+            if best and best.get("link"):
+                results.append(best["link"])
+        return results
+    except Exception as e:
+        print("      Pexels video hata:", e)
+        return []
+
+def pixabay_video_search(query):
+    key = os.environ.get("PIXABAY_API_KEY")
+    if not key:
+        return []
+    url = "https://pixabay.com/api/videos/"
+    params = {"key": key, "q": query, "per_page": 15}
+    try:
+        r = session.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        results = []
+        for hit in data.get("hits", []):
+            videos = hit.get("videos", {})
+            for quality in ("large", "medium", "small"):
+                v = videos.get(quality)
+                if v and v.get("url"):
+                    results.append(v["url"])
+                    break
+        return results
+    except Exception as e:
+        print("      Pixabay video hata:", e)
+        return []
 
 def pexels_search(query):
     key = os.environ.get("PEXELS_API_KEY")
@@ -304,7 +345,6 @@ def pexels_search(query):
         print("      Pexels hata:", e)
         return []
 
-
 def pixabay_search(query):
     key = os.environ.get("PIXABAY_API_KEY")
     if not key:
@@ -324,7 +364,6 @@ def pixabay_search(query):
     except Exception as e:
         print("      Pixabay foto hata:", e)
         return []
-
 
 def wikimedia_search(query):
     url = "https://commons.wikimedia.org/w/api.php"
@@ -349,7 +388,6 @@ def wikimedia_search(query):
         print("      Wikimedia hata:", e)
         return []
 
-
 def openverse_search(query):
     url = "https://api.openverse.org/v1/images/"
     params = {"q": query, "page_size": 30, "license_type": "commercial,modification"}
@@ -366,7 +404,6 @@ def openverse_search(query):
     except Exception as e:
         print("      Openverse hata:", e)
         return []
-
 
 def unsplash_search(query):
     key = os.environ.get("UNSPLASH_API_KEY")
@@ -393,7 +430,6 @@ def unsplash_search(query):
         print("      Unsplash hata:", e)
         return []
 
-
 def pollinations_generate(prompt):
     safe_prompt = urllib.parse.quote(
         f"{prompt}, cinematic documentary photo, realistic, high detail"
@@ -412,19 +448,19 @@ def pollinations_generate(prompt):
         print("      Pollinations hata:", e)
         return None
 
-
-def download_image(url, path):
+def download_media(url, path, kind="image"):
     try:
-        r = session.get(url, timeout=40, stream=True)
+        r = session.get(url, timeout=60, stream=True)
         r.raise_for_status()
         ctype = r.headers.get("content-type", "").lower()
-        if not ctype.startswith("image/"):
+        if not ctype.startswith(kind + "/"):
             return False
         with open(path, "wb") as f:
             for chunk in r.iter_content(65536):
                 if chunk:
                     f.write(chunk)
-        if not os.path.exists(path) or os.path.getsize(path) < 10000:
+        min_size = 20000 if kind == "video" else 10000
+        if not os.path.exists(path) or os.path.getsize(path) < min_size:
             if os.path.exists(path):
                 os.remove(path)
             return False
@@ -436,7 +472,6 @@ def download_image(url, path):
         except:
             pass
         return False
-
 
 def save_bytes_as_image(content_bytes, path):
     try:
@@ -455,7 +490,6 @@ def save_bytes_as_image(content_bytes, path):
             pass
         return False
 
-
 def file_hash(path):
     try:
         h = hashlib.sha256()
@@ -469,9 +503,8 @@ def file_hash(path):
     except:
         return None
 
-
 def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
-    for source_name, search, query in sources:
+    for source_name, search, query, kind, ext in sources:
         if not query:
             continue
         print("   🔎", source_name, "-", query[:60])
@@ -479,9 +512,9 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
         for url in urls:
             if not url or url in used_urls:
                 continue
-            filename = f"visual_{success + 1:03d}.jpg"
+            filename = f"visual_{success + 1:03d}.{ext}"
             path = os.path.join(visuals_dir, filename)
-            ok = download_image(url, path)
+            ok = download_media(url, path, kind)
             if not ok:
                 continue
             h = file_hash(path)
@@ -491,13 +524,12 @@ def try_sources(sources, used_urls, used_hashes, success, visuals_dir):
                 except:
                     pass
                 continue
-            return path, source_name, url, h
-    return None, None, None, None
-
+            return path, source_name, url, h, kind
+    return None, None, None, None, None
 
 def main():
     print("================================")
-    print("🧠 UZUN VİDEO GÖRSEL MOTORU (SADECE RESİM, HİÇ TEKRAR YOK)")
+    print("🧠 UZUN VİDEO GÖRSEL/VİDEO MOTORU (VİDEO ÖNCELİKLİ)")
     print("================================")
 
     topic = get_topic()
@@ -525,6 +557,7 @@ def main():
     used_urls, used_hashes = load_used_visuals()
     success = 0
     ai_generated_count = 0
+    video_count = 0
 
     for i, scene in enumerate(scenes, 1):
         print(f"[{i}/{len(scenes)}]")
@@ -536,30 +569,60 @@ def main():
         if smart_query:
             print("   🧠 Akıllı sorgu:", smart_query)
 
-        sources = []
+        selected = selected_source = url = h = kind = None
 
         if smart_query:
-            sources.append(("Pexels Foto (akıllı sorgu)", pexels_search, smart_query))
-            sources.append(("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query))
-            sources.append(("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query))
-            sources.append(("Openverse (akıllı sorgu)", openverse_search, smart_query))
-            sources.append(("Unsplash (akıllı sorgu)", unsplash_search, smart_query))
+            smart_sources = [
+                ("Pexels Video (akıllı sorgu)", pexels_video_search, smart_query, "video", "mp4"),
+                ("Pixabay Video (akıllı sorgu)", pixabay_video_search, smart_query, "video", "mp4"),
+                ("Pexels Foto (akıllı sorgu)", pexels_search, smart_query, "image", "jpg"),
+                ("Pixabay Foto (akıllı sorgu)", pixabay_search, smart_query, "image", "jpg"),
+                ("Wikimedia Foto (akıllı sorgu)", wikimedia_search, smart_query, "image", "jpg"),
+                ("Openverse (akıllı sorgu)", openverse_search, smart_query, "image", "jpg"),
+                ("Unsplash (akıllı sorgu)", unsplash_search, smart_query, "image", "jpg"),
+            ]
+            selected, selected_source, url, h, kind = try_sources(
+                smart_sources, used_urls, used_hashes, success, VISUALS
+            )
 
-        sources.append(("Pexels Foto (genel)", pexels_search, fallback_query))
-        sources.append(("Pixabay Foto (genel)", pixabay_search, fallback_query))
-        sources.append(("Wikimedia Foto (genel)", wikimedia_search, fallback_query))
-        sources.append(("Openverse (genel)", openverse_search, fallback_query))
-        sources.append(("Unsplash (genel)", unsplash_search, fallback_query))
+        if not selected and smart_query:
+            print("   🤖 Alakalı stok bulunamadı, AI ile spesifik görsel üretiliyor...")
+            content_bytes = pollinations_generate(smart_query)
+            if content_bytes:
+                filename = f"visual_{success + 1:03d}.jpg"
+                path = os.path.join(VISUALS, filename)
+                if save_bytes_as_image(content_bytes, path):
+                    hh = file_hash(path)
+                    if hh not in used_hashes:
+                        selected, selected_source, url, h, kind = (
+                            path, "Pollinations AI (akıllı sorgu)", f"ai-generated:{hh}", hh, "image"
+                        )
+                        ai_generated_count += 1
 
-        selected, selected_source, url, h = try_sources(sources, used_urls, used_hashes, success, VISUALS)
+        if not selected:
+            fallback_sources = [
+                ("Pexels Video (genel)", pexels_video_search, fallback_query, "video", "mp4"),
+                ("Pixabay Video (genel)", pixabay_video_search, fallback_query, "video", "mp4"),
+                ("Pexels Foto (genel)", pexels_search, fallback_query, "image", "jpg"),
+                ("Pixabay Foto (genel)", pixabay_search, fallback_query, "image", "jpg"),
+                ("Wikimedia Foto (genel)", wikimedia_search, fallback_query, "image", "jpg"),
+                ("Openverse (genel)", openverse_search, fallback_query, "image", "jpg"),
+                ("Unsplash (genel)", unsplash_search, fallback_query, "image", "jpg"),
+            ]
+            selected, selected_source, url, h, kind = try_sources(
+                fallback_sources, used_urls, used_hashes, success, VISUALS
+            )
 
         if not selected:
             generic_sources = []
             for q in GENERIC_FALLBACK_QUERIES_EN:
-                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q))
-                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q))
-                generic_sources.append(("Openverse (genel havuz)", openverse_search, q))
-            selected, selected_source, url, h = try_sources(generic_sources, used_urls, used_hashes, success, VISUALS)
+                generic_sources.append(("Pexels Video (genel havuz)", pexels_video_search, q, "video", "mp4"))
+                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image", "jpg"))
+                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image", "jpg"))
+                generic_sources.append(("Openverse (genel havuz)", openverse_search, q, "image", "jpg"))
+            selected, selected_source, url, h, kind = try_sources(
+                generic_sources, used_urls, used_hashes, success, VISUALS
+            )
 
         if not selected:
             print("   🤖 Hiçbir stok kaynak bulunamadı, AI ile görsel üretiliyor...")
@@ -570,11 +633,11 @@ def main():
                 filename = f"visual_{success + 1:03d}.jpg"
                 path = os.path.join(VISUALS, filename)
                 if save_bytes_as_image(content_bytes, path):
-                    h = file_hash(path)
-                    if h not in used_hashes:
-                        selected = path
-                        selected_source = "Pollinations AI (üretildi)"
-                        url = f"ai-generated:{h}"
+                    hh = file_hash(path)
+                    if hh not in used_hashes:
+                        selected, selected_source, url, h, kind = (
+                            path, "Pollinations AI (üretildi)", f"ai-generated:{hh}", hh, "image"
+                        )
                         ai_generated_count += 1
 
         if selected:
@@ -582,18 +645,20 @@ def main():
             if h:
                 used_hashes.add(h)
             success += 1
+            if kind == "video":
+                video_count += 1
 
         manifest.append({
             "scene": i,
             "scene_text": scene[:300],
             "smart_query": smart_query,
             "file": selected,
-            "type": "image",
+            "type": kind or "image",
             "source": selected_source or "YOK"
         })
 
         if selected:
-            print(f"   ✅ [image] {selected_source}")
+            print(f"   ✅ [{kind}] {selected_source}")
         else:
             print("   ⚠️ Hiç içerik bulunamadı (AI üretimi de başarısız).")
 
@@ -606,12 +671,12 @@ def main():
     save_used_visuals(used_urls, used_hashes)
 
     print("================================")
-    print("✅ GÖRSEL ARAMA BİTTİ")
+    print("✅ GÖRSEL/VİDEO ARAMA BİTTİ")
     print("================================")
     print(f"Benzersiz içerik: {success} / {len(scenes)}")
+    print(f"Video sahne: {video_count}")
     print(f"AI ile üretilen: {ai_generated_count}")
     print("Manifest:", MANIFEST)
-
 
 if __name__ == "__main__":
     main()
