@@ -13,8 +13,7 @@ CONCAT = os.path.join(OUT, "unique_visuals.txt")
 VIDEO = os.path.join(OUT, "einstein_unique.mp4")
 FRAGMENTS_DIR = os.path.join(OUT, "video_fragments")
 
-SCENE_DURATION = 7  # saniye - her görsel tam 7 saniyede bir değişir
-
+SCENE_DURATION = 7  # saniye - her görsel/video tam 7 saniyede bir değişir
 
 def file_hash(path):
     h = hashlib.sha256()
@@ -25,7 +24,6 @@ def file_hash(path):
                 break
             h.update(chunk)
     return h.hexdigest()
-
 
 shutil.rmtree(FRAGMENTS_DIR, ignore_errors=True)
 os.makedirs(FRAGMENTS_DIR, exist_ok=True)
@@ -42,31 +40,31 @@ voice_duration = float(subprocess.check_output(voice_cmd).decode().strip())
 with open(MANIFEST, encoding="utf-8") as f:
     manifest = json.load(f)
 
-image_files = []
+visual_items = []
 for item in manifest:
     path = item.get("file")
     if not path or not os.path.exists(path):
         continue
-    image_files.append(path)
+    visual_items.append((path, item.get("type", "image")))
 
 print("================================")
-print("🧠 UZUN VİDEO GÖRSEL BİRLEŞTİRME MOTORU (SABİT 7 SN)")
+print("🧠 UZUN VİDEO GÖRSEL/VİDEO BİRLEŞTİRME MOTORU (SABİT 7 SN)")
 print("================================")
 print("Ses:", round(voice_duration, 2), "saniye")
-print("Benzersiz görsel sayısı:", len(image_files))
+print("Benzersiz içerik sayısı:", len(visual_items))
 
-if not image_files:
-    raise SystemExit("Hiç kullanılabilir görsel yok.")
+if not visual_items:
+    raise SystemExit("Hiç kullanılabilir görsel/video yok.")
 
 # Ses süresini tam olarak 7 saniyelik dilimlere böl.
-# Görsel sayısı yetmezse baştan döngüye alınıp tekrar kullanılır,
-# böylece "her 7 saniyede bir görsel değişsin" kuralı her zaman
-# sağlanır.
+# İçerik sayısı yetmezse baştan döngüye alınıp tekrar kullanılır,
+# böylece "her 7 saniyede bir görsel/video değişsin" kuralı her
+# zaman sağlanır.
 num_scenes = max(1, int(voice_duration // SCENE_DURATION))
 if voice_duration % SCENE_DURATION > 0.5:
     num_scenes += 1
 
-sequence = [image_files[i % len(image_files)] for i in range(num_scenes)]
+sequence = [visual_items[i % len(visual_items)] for i in range(num_scenes)]
 durations = [SCENE_DURATION for _ in sequence]
 
 # Toplam süreyi tam ses süresine oturt (son sahneye farkı ekle).
@@ -79,32 +77,53 @@ print()
 
 fragment_paths = []
 
-for idx, (path, duration) in enumerate(zip(sequence, durations), 1):
+for idx, ((path, vtype), duration) in enumerate(zip(sequence, durations), 1):
     frag_path = os.path.join(FRAGMENTS_DIR, f"frag_{idx:03d}.mp4")
     fps = 30
-    frame_count = max(1, int(round(duration * fps)))
 
-    # Ken Burns: yavaş yakınlaştırma efekti, statik fotoğrafa hareket katar.
-    vf = (
-        "scale=2400:-1,"
-        f"zoompan=z='min(zoom+0.0006,1.08)':d={frame_count}:s=1920x1080:fps={fps},"
-        "format=yuv420p"
-    )
-    cmd = [
-        "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", path,
-        "-t", f"{duration:.3f}",
-        "-vf", vf,
-        "-r", str(fps),
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-an",
-        frag_path
-    ]
+    if vtype == "video":
+        # Gerçek video klibi: kırp/ölçekle, gerekirse döngüye al.
+        vf = (
+            "scale=1920:1080:force_original_aspect_ratio=increase,"
+            "crop=1920:1080,format=yuv420p"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", path,
+            "-t", f"{duration:.3f}",
+            "-vf", vf,
+            "-r", str(fps),
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-an",
+            frag_path
+        ]
+    else:
+        frame_count = max(1, int(round(duration * fps)))
 
-    print(f"[{idx}/{len(sequence)}] parça oluşturuluyor - {duration:.2f} sn")
+        # Ken Burns: yavaş yakınlaştırma efekti, statik fotoğrafa hareket katar.
+        vf = (
+            "scale=2400:-1,"
+            f"zoompan=z='min(zoom+0.0006,1.08)':d={frame_count}:s=1920x1080:fps={fps},"
+            "format=yuv420p"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", path,
+            "-t", f"{duration:.3f}",
+            "-vf", vf,
+            "-r", str(fps),
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-an",
+            frag_path
+        ]
+
+    print(f"[{idx}/{len(sequence)}] parça oluşturuluyor ({vtype}) - {duration:.2f} sn")
 
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -143,7 +162,7 @@ shutil.rmtree(FRAGMENTS_DIR, ignore_errors=True)
 
 print()
 print("================================")
-print("✅ UZUN VİDEO GÖRSEL BİRLEŞTİRME TAMAMLANDI")
+print("✅ UZUN VİDEO GÖRSEL/VİDEO BİRLEŞTİRME TAMAMLANDI")
 print("================================")
 print("Dosya:", VIDEO)
 print("Sahne:", len(fragment_paths))
