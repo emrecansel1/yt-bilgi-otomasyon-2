@@ -4,6 +4,8 @@ import sys
 import json
 from datetime import datetime
 
+import bg_music
+
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 
@@ -16,9 +18,9 @@ VOICE = os.path.join(OUT, "shorts_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "shorts_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "shorts_final.mp4")
 META_FILE = os.path.join(OUT, "shorts_meta.json")
+MUSIC_FILE = os.path.join(OUT, "shorts_bg_music.mp3")
 
 HEDEF_SAATLER = {9, 12, 15, 18, 21}
-
 
 def run(cmd, name):
     print()
@@ -30,7 +32,6 @@ def run(cmd, name):
 
     if result.returncode != 0:
         raise SystemExit(f"❌ HATA: {name}")
-
 
 def main():
 
@@ -84,6 +85,16 @@ def main():
     with open(SCRIPT_TEXT, "w", encoding="utf-8") as f:
         f.write(script_text)
 
+    print()
+    print("🎵 Arka plan müziği indiriliyor...")
+
+    music_track = bg_music.download_music(MUSIC_FILE)
+
+    if music_track:
+        description = (
+            description + bg_music.license_credit(music_track)
+        ).strip()
+
     meta = {"title": title, "description": description, "tags": tags}
 
     with open(META_FILE, "w", encoding="utf-8") as f:
@@ -124,22 +135,50 @@ def main():
     print()
     print("🔊 4/5 SES VİDEOYA EKLENİYOR...")
 
-    run(
-        [
-            "ffmpeg", "-y",
-            "-i", VIDEO_NO_AUDIO,
-            "-i", VOICE,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-c:v", "copy",
-            "-c:a", "aac", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
-            "-b:a", "128k",
-            "-shortest",
-            "-movflags", "+faststart",
-            FINAL
-        ],
-        "FİNAL VİDEO"
-    )
+    if music_track and os.path.exists(MUSIC_FILE):
+
+        run(
+            [
+                "ffmpeg", "-y",
+                "-i", VIDEO_NO_AUDIO,
+                "-i", VOICE,
+                "-stream_loop", "-1",
+                "-i", MUSIC_FILE,
+                "-filter_complex",
+                "[2:a]volume=0.10[bg];"
+                "[1:a][bg]amix=inputs=2:duration=first:"
+                "dropout_transition=2:weights=1 1[amix];"
+                "[amix]loudnorm=I=-14:TP=-1.5:LRA=11[aout]",
+                "-map", "0:v:0",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-shortest",
+                "-movflags", "+faststart",
+                FINAL
+            ],
+            "FİNAL VİDEO (MÜZİKLİ)"
+        )
+
+    else:
+
+        run(
+            [
+                "ffmpeg", "-y",
+                "-i", VIDEO_NO_AUDIO,
+                "-i", VOICE,
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
+                "-b:a", "128k",
+                "-shortest",
+                "-movflags", "+faststart",
+                FINAL
+            ],
+            "FİNAL VİDEO (MÜZİKSİZ)"
+        )
 
     if not os.path.exists(FINAL):
         raise SystemExit("❌ shorts_final.mp4 oluşmadı.")
@@ -155,6 +194,9 @@ def main():
     if os.path.exists(VIDEO_NO_AUDIO):
         os.remove(VIDEO_NO_AUDIO)
 
+    if os.path.exists(MUSIC_FILE):
+        os.remove(MUSIC_FILE)
+
     print()
     print("================================")
     print("🎉 SHORTS VİDEO HAZIR")
@@ -164,7 +206,6 @@ def main():
     print("📁 Dosya:", FINAL)
     print("💾 Boyut:", round(os.path.getsize(FINAL) / 1024 / 1024, 2), "MB")
     print("================================")
-
 
 if __name__ == "__main__":
     main()
