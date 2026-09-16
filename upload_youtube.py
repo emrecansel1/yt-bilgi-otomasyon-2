@@ -6,7 +6,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 
@@ -18,7 +17,6 @@ CONTENT = os.path.join(OUT, "current_content.txt")
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
-
 def load_config():
     if not os.path.exists(CONFIG):
         return {}
@@ -29,6 +27,42 @@ def load_config():
     except Exception:
         return {}
 
+def sanitize_tags(raw_tags):
+    """YouTube API'nin reddetmemesi için etiketleri temizler:
+    satır sonu/özel karakterleri kaldırır, uzunluk ve toplam
+    boyut sınırlarına uydurur."""
+
+    cleaned = []
+    total_len = 0
+
+    for t in raw_tags:
+        tag = str(t).replace("\n", " ").replace("\r", " ")
+        tag = tag.strip().strip("#").strip('"').strip("'").strip()
+        tag = re.sub(r"\s+", " ", tag)
+        tag = re.sub(r"[<>]", "", tag)
+
+        if not tag:
+            continue
+
+        if len(tag) > 30:
+            tag = tag[:30].strip()
+
+        if not tag:
+            continue
+
+        added_len = len(tag) + 2
+
+        if total_len + added_len > 460:
+            break
+
+        if tag.lower() not in [c.lower() for c in cleaned]:
+            cleaned.append(tag)
+            total_len += added_len
+
+        if len(cleaned) >= 25:
+            break
+
+    return cleaned
 
 def parse_metadata_from_content():
     """current_content.txt içindeki METADATA bölümünden
@@ -48,7 +82,7 @@ def parse_metadata_from_content():
     tags = None
 
     title_match = re.search(
-        r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nAÇIKLAMA:)",
+        r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nKISA_BASLIK:|\nAÇIKLAMA:)",
         text,
         re.DOTALL
     )
@@ -66,7 +100,7 @@ def parse_metadata_from_content():
         description = desc_match.group(1).strip()
 
     tags_match = re.search(
-        r"ETİKETLER:\s*\n?(.+?)$",
+        r"ETİKETLER:\s*\n?(.+?)(?:\n\s*\n|$)",
         text,
         re.DOTALL
     )
@@ -74,18 +108,19 @@ def parse_metadata_from_content():
     if tags_match:
         raw_tags = tags_match.group(1).strip()
 
-        tags = [
+        raw_list = [
             t.strip()
             for t in raw_tags.split(",")
             if t.strip()
         ]
+
+        tags = sanitize_tags(raw_list)
 
     print("[DEBUG] Başlık bulundu mu:", title is not None)
     print("[DEBUG] Açıklama bulundu mu:", description is not None)
     print("[DEBUG] Etiket bulundu mu:", tags is not None)
 
     return title, description, tags
-
 
 def upload_thumbnail(youtube, video_id):
     """Oluşturulan thumbnail'i YouTube videosuna kapak olarak atar."""
@@ -120,7 +155,6 @@ def upload_thumbnail(youtube, video_id):
         print(str(e))
         print("⚠️ Video yine de YouTube'a yüklenmiş durumda.")
         return False
-
 
 def upload():
     print("=" * 40)
@@ -177,14 +211,16 @@ def upload():
         "Bilim, tarih ve dünyadan ilginç bilgiler."
     )
 
-    tags = parsed_tags or config.get(
-        "youtube_tags",
-        [
-            "bilgi",
-            "bilim",
-            "tarih",
-            "ilginç bilgiler"
-        ]
+    tags = parsed_tags or sanitize_tags(
+        config.get(
+            "youtube_tags",
+            [
+                "bilgi",
+                "bilim",
+                "tarih",
+                "ilginç bilgiler"
+            ]
+        )
     )
 
     privacy = youtube_config.get(
@@ -275,7 +311,5 @@ def upload():
 
     return video_id
 
-
 if __name__ == "__main__":
     upload()
-        
