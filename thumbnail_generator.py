@@ -12,7 +12,7 @@ VISUALS = os.path.join(OUT, "visuals")
 CONTENT = os.path.join(OUT, "current_content.txt")
 TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
 THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
-AI_BACKGROUND = os.path.join(OUT, "current_thumbnail_ai_bg.jpg")
+THUMB_SOURCE_CACHE = os.path.join(OUT, "current_thumbnail_source.jpg")
 
 def get_topic():
     if os.path.exists(TOPIC_FILE):
@@ -75,7 +75,128 @@ def get_metadata():
         }
 
 # =========================================================
-# KONUYA ÖZEL AI KAPAK GÖRSELİ (Pollinations AI, ücretsiz)
+# GERÇEK KİŞİ FOTOĞRAFI (Wikipedia - öncelikli, uydurma değil)
+# =========================================================
+
+def extract_search_name(topic):
+    if not topic:
+        return None
+
+    text = topic
+
+    for sep in [" - ", ": ", " – ", " — "]:
+        if sep in text:
+            text = text.split(sep, 1)[0]
+
+    text = re.split(
+        r"'(in|ın|nin|nın|nün|nun|ün|un|i|ı|nu|nü)\b",
+        text,
+        maxsplit=1
+    )[0]
+
+    return text.strip()
+
+def wiki_search_photo(query, lang="tr"):
+    try:
+        base_url = f"https://{lang}.wikipedia.org/w/api.php"
+
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": query,
+            "format": "json",
+            "srlimit": 1,
+        }
+
+        r = requests.get(base_url, params=search_params, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+
+        results = data.get("query", {}).get("search", [])
+
+        if not results:
+            return None
+
+        page_title = results[0]["title"]
+
+        img_params = {
+            "action": "query",
+            "titles": page_title,
+            "prop": "pageimages",
+            "piprop": "original",
+            "format": "json",
+        }
+
+        r2 = requests.get(base_url, params=img_params, timeout=20)
+        r2.raise_for_status()
+        data2 = r2.json()
+
+        pages = data2.get("query", {}).get("pages", {})
+
+        for page in pages.values():
+            original = page.get("original", {})
+            image_url = original.get("source")
+            if image_url:
+                return image_url
+
+        return None
+
+    except Exception as e:
+        print(f"⚠️ Wikipedia ({lang}) fotoğrafı alınamadı:", str(e))
+        return None
+
+def find_real_photo(topic, title):
+    query_candidates = []
+
+    name = extract_search_name(topic)
+
+    if name:
+        query_candidates.append(name)
+
+    if topic and topic not in query_candidates:
+        query_candidates.append(topic)
+
+    if title and title not in query_candidates:
+        query_candidates.append(title)
+
+    for query in query_candidates:
+        for lang in ("tr", "en"):
+            image_url = wiki_search_photo(query, lang=lang)
+
+            if not image_url:
+                continue
+
+            try:
+                r = requests.get(image_url, timeout=30)
+                r.raise_for_status()
+
+                ctype = r.headers.get("content-type", "").lower()
+
+                if not ctype.startswith("image/") or "svg" in ctype:
+                    continue
+
+                with open(THUMB_SOURCE_CACHE, "wb") as f:
+                    f.write(r.content)
+
+                if os.path.getsize(THUMB_SOURCE_CACHE) < 10000:
+                    continue
+
+                print(
+                    f"✅ Gerçek fotoğraf bulundu: '{query}' "
+                    f"(Wikipedia {lang})"
+                )
+                return THUMB_SOURCE_CACHE
+
+            except Exception as e:
+                print("⚠️ Fotoğraf indirilemedi:", str(e))
+                continue
+
+    print("⚠️ Wikipedia'da gerçek fotoğraf bulunamadı.")
+    return None
+
+# =========================================================
+# AI KAPAK GÖRSELİ (Pollinations AI - SADECE gerçek fotoğraf
+# bulunamazsa son çare olarak kullanılır)
 # =========================================================
 
 def build_thumbnail_prompt(topic, title):
@@ -108,18 +229,18 @@ def generate_ai_thumbnail_background(topic, title):
             print("⚠️ AI kapak görseli geçersiz içerik türü döndürdü.")
             return None
 
-        with open(AI_BACKGROUND, "wb") as f:
+        with open(THUMB_SOURCE_CACHE, "wb") as f:
             f.write(r.content)
 
         if (
-            not os.path.exists(AI_BACKGROUND)
-            or os.path.getsize(AI_BACKGROUND) < 10000
+            not os.path.exists(THUMB_SOURCE_CACHE)
+            or os.path.getsize(THUMB_SOURCE_CACHE) < 10000
         ):
             print("⚠️ AI kapak görseli çok küçük, geçersiz sayılıyor.")
             return None
 
-        print("✅ Konuya özel AI kapak görseli üretildi.")
-        return AI_BACKGROUND
+        print("⚠️ Gerçek fotoğraf bulunamadığı için AI görseli kullanılıyor.")
+        return THUMB_SOURCE_CACHE
 
     except Exception as e:
         print("⚠️ AI kapak görseli üretilemedi:", str(e))
@@ -204,20 +325,25 @@ def make_thumbnail():
     topic = get_topic()
     meta = get_metadata()
 
-    source = generate_ai_thumbnail_background(topic, meta["title"])
-    used_ai_bg = source is not None
+    source = find_real_photo(topic, meta["title"])
+    source_kind = "gerçek fotoğraf"
+
+    if not source:
+        source = generate_ai_thumbnail_background(topic, meta["title"])
+        source_kind = "AI üretimi (son çare)"
 
     if not source:
         files = find_visuals()
 
         if not files:
-            print("❌ Thumbnail için görsel bulunamadı.")
+            print("❌ Thumbnail için hiçbir görsel bulunamadı.")
             print("🔍 Aranan klasör:", VISUALS)
             return False
 
         source = choose_best_visual(files)
+        source_kind = "sahne görseli (son çare)"
 
-    print("🖼️ Thumbnail görseli:", source, "(AI üretimi)" if used_ai_bg else "(sahne görseli)")
+    print("🖼️ Thumbnail görseli:", source, f"({source_kind})")
 
     image = Image.open(source).convert("RGB")
     image = fit_cover(image)
@@ -346,9 +472,9 @@ def make_thumbnail():
         optimize=True
     )
 
-    if os.path.exists(AI_BACKGROUND):
+    if os.path.exists(THUMB_SOURCE_CACHE):
         try:
-            os.remove(AI_BACKGROUND)
+            os.remove(THUMB_SOURCE_CACHE)
         except Exception:
             pass
 
@@ -356,6 +482,7 @@ def make_thumbnail():
     print("✅ THUMBNAIL OLUŞTURULDU")
     print("================================")
     print("Dosya:", THUMBNAIL)
+    print("Kaynak:", source_kind)
     print("Metin:", short_text)
     print("================================")
 
