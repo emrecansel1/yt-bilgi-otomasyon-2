@@ -73,6 +73,8 @@ ORNEK_KONULAR = """
 - Srinivasa Ramanujan'ın İngiltere'de yalnızlıktan hastalanması
 - Kurt Gödel'in paranoyadan açlıktan ölmesi
 - Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
+- Einstein'ın kimsenin bilmediği acı bir kararı
+- Newton'un gizli simya çalışmaları
 """
 
 def clean_text(text):
@@ -324,6 +326,10 @@ Hikayelerde haksızlık, trajedi, mücadele, görmezden gelinme,
 yalnızlık, başarısızlık veya geç gelen başarı gibi güçlü
 insani unsurlar bulunabilir.
 
+Konu seçerken hem tanınan isimleri (Einstein, Tesla, Newton
+gibi, herkesin bilmediği bir yönüyle) hem de az bilinen
+çarpıcı hikayeleri dengeli kullan.
+
 ÖRNEK KONU TARZLARI:
 {ORNEK_KONULAR}
 
@@ -347,7 +353,12 @@ Parantez, sahne açıklaması, kamera açıklaması veya efekt yazma.
 "Merhaba arkadaşlar", "Biliyor muydunuz ki" gibi girişler kullanma.
 
 BAŞLIK:
-Merak uyandırıcı ama yanıltıcı olmayan Türkçe başlık.
+Güçlü bir merak açığı (curiosity gap) yaratan, tıklatmaya
+zorlayan ama yanıltıcı olmayan Türkçe başlık yaz.
+Şu tarz kalıplardan ilham al (birebir kopyalama):
+"Bilim Dünyasının Sakladığı Gerçek", "Kimsenin Bilmediği
+Hikaye", "Onu Çıldırtan Keşif" gibi.
+Kısa, çarpıcı, tek satır.
 
 AÇIKLAMA:
 1-2 kısa Türkçe cümle.
