@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import re
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -33,7 +34,6 @@ EK_HASHTAG_HAVUZU = [
 
 EK_HASHTAG_SAYISI = 3
 
-
 def load_config():
     if not os.path.exists(CONFIG):
         return {}
@@ -43,7 +43,6 @@ def load_config():
             return json.load(f)
     except Exception:
         return {}
-
 
 def load_meta():
     if not os.path.exists(META_FILE):
@@ -55,6 +54,42 @@ def load_meta():
     except Exception:
         return {}
 
+def sanitize_tags(raw_tags):
+    """YouTube API'nin reddetmemesi için etiketleri temizler:
+    satır sonu/özel karakterleri kaldırır, uzunluk ve toplam
+    boyut sınırlarına uydurur."""
+
+    cleaned = []
+    total_len = 0
+
+    for t in raw_tags:
+        tag = str(t).replace("\n", " ").replace("\r", " ")
+        tag = tag.strip().strip("#").strip('"').strip("'").strip()
+        tag = re.sub(r"\s+", " ", tag)
+        tag = re.sub(r"[<>]", "", tag)
+
+        if not tag:
+            continue
+
+        if len(tag) > 30:
+            tag = tag[:30].strip()
+
+        if not tag:
+            continue
+
+        added_len = len(tag) + 2
+
+        if total_len + added_len > 460:
+            break
+
+        if tag.lower() not in [c.lower() for c in cleaned]:
+            cleaned.append(tag)
+            total_len += added_len
+
+        if len(cleaned) >= 25:
+            break
+
+    return cleaned
 
 def secili_ek_hashtagler():
     secim = random.sample(
@@ -62,7 +97,6 @@ def secili_ek_hashtagler():
         min(EK_HASHTAG_SAYISI, len(EK_HASHTAG_HAVUZU))
     )
     return " ".join(secim)
-
 
 def get_credentials():
     if not os.path.exists(TOKEN):
@@ -118,7 +152,6 @@ def get_credentials():
 
     return creds
 
-
 def upload():
     print("=" * 40)
     print("📱 YOUTUBE SHORTS YÜKLEYİCİ")
@@ -164,11 +197,12 @@ def upload():
     raw_tags = meta.get("tags", "")
 
     if raw_tags:
-        tags = [
+        raw_list = [
             t.strip()
             for t in raw_tags.split(",")
             if t.strip()
         ]
+        tags = sanitize_tags(raw_list)
     else:
         tags = [
             "bilgi",
@@ -252,7 +286,6 @@ def upload():
     print("=" * 40)
 
     return video_id
-
 
 if __name__ == "__main__":
     upload()
