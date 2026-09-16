@@ -221,10 +221,23 @@ aratmak için 3-6 kelimelik SOMUT, GÖRSEL OLARAK ARANABİLİR bir
 METİN PARÇALARI:
 {numbered}
 
-KURALLAR:
-- Soyut kavram yazma.
-- Metinde geçen somut özel isim, nesne, yer, olay, dönem varsa
-  onu kullan.
+ÇOK ÖNEMLİ KURALLAR:
+- KESİNLİKLE şiirsel, soyut veya metaforik ifade kullanma.
+  Örneğin "silence", "grace", "elegance", "freedom", "swan",
+  "bird flying", "solitude" gibi metaforik/soyut sorgular
+  YASAK. Bu tür sorgular stok sitelerde alakasız kuğu/kuş/
+  doğa fotoğrafları döndürüyor.
+- Sorgu HER ZAMAN konuyla ({topic}) somut bir bağlantı
+  içermeli: dönemin nesneleri, bilimsel aletler, binalar,
+  yazılar, portreler, o döneme ait somut görseller gibi.
+- Metinde geçen somut özel isim, nesne, yer, olay, dönem
+  varsa mutlaka onu kullan.
+- Metin soyut/duygusal bir cümleyse (ör. "içi kan ağlıyordu"),
+  o duyguyu değil, o sahnenin GERÇEKTE geçtiği somut ortamı
+  sorgula (ör. "{topic[:40]} vintage laboratory 1900s",
+  "old observatory telescope archive").
+- Kişi/olayla ilgili hiçbir somut ayrıntı yoksa bile, sorguya
+  "{topic[:40]}" bağlamını (dönem, meslek, alan) mutlaka kat.
 - Tırnak işareti kullanma.
 
 ÇIKTI FORMATI (tam olarak bunu kullan, başka hiçbir şey yazma):
@@ -614,21 +627,8 @@ def main():
             )
 
         if not selected:
-            generic_sources = []
-            for q in GENERIC_FALLBACK_QUERIES_EN:
-                generic_sources.append(("Pexels Video (genel havuz)", pexels_video_search, q, "video", "mp4"))
-                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image", "jpg"))
-                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image", "jpg"))
-                generic_sources.append(("Openverse (genel havuz)", openverse_search, q, "image", "jpg"))
-            selected, selected_source, url, h, kind = try_sources(
-                generic_sources, used_urls, used_hashes, success, VISUALS
-            )
-
-        if not selected:
-            print("   🤖 Hiçbir stok kaynak bulunamadı, AI ile görsel üretiliyor...")
-            ai_prompt = smart_query or fallback_query
-            content_bytes = pollinations_generate(ai_prompt)
-
+            print("   🤖 Genel stok da bulunamadı, AI ile konuya bağlı görsel üretiliyor...")
+            content_bytes = pollinations_generate(fallback_query)
             if content_bytes:
                 filename = f"visual_{success + 1:03d}.jpg"
                 path = os.path.join(VISUALS, filename)
@@ -636,9 +636,19 @@ def main():
                     hh = file_hash(path)
                     if hh not in used_hashes:
                         selected, selected_source, url, h, kind = (
-                            path, "Pollinations AI (üretildi)", f"ai-generated:{hh}", hh, "image"
+                            path, "Pollinations AI (genel sorgu)", f"ai-generated:{hh}", hh, "image"
                         )
                         ai_generated_count += 1
+
+        if not selected:
+            generic_sources = []
+            for q in GENERIC_FALLBACK_QUERIES_EN:
+                generic_sources.append(("Pexels Foto (genel havuz)", pexels_search, q, "image", "jpg"))
+                generic_sources.append(("Pixabay Foto (genel havuz)", pixabay_search, q, "image", "jpg"))
+                generic_sources.append(("Openverse (genel havuz)", openverse_search, q, "image", "jpg"))
+            selected, selected_source, url, h, kind = try_sources(
+                generic_sources, used_urls, used_hashes, success, VISUALS
+            )
 
         if selected:
             used_urls.add(url)
