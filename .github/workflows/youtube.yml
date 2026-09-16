@@ -211,6 +211,11 @@ jobs:
         shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+          GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+          GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
@@ -221,6 +226,14 @@ jobs:
           else
             echo "✅ GEMINI_API_KEY mevcut."
           fi
+
+          KEY_COUNT=0
+          for v in "$GEMINI_API_KEY" "$GEMINI_API_KEY_2" "$GEMINI_API_KEY_3" "$GEMINI_API_KEY_4" "$GEMINI_API_KEY_5" "$GEMINI_API_KEY_6"; do
+            if [ -n "$v" ]; then
+              KEY_COUNT=$((KEY_COUNT + 1))
+            fi
+          done
+          echo "🧠 Toplam Gemini key sayısı: $KEY_COUNT"
 
           if [ -z "$CEREBRAS_API_KEY" ]; then
             echo "⚠️ CEREBRAS_API_KEY bulunamadi."
@@ -238,6 +251,11 @@ jobs:
         shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+          GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+          GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
