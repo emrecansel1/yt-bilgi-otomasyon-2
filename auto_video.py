@@ -2,7 +2,10 @@ import os
 import subprocess
 import sys
 import json
+import re
 from datetime import datetime
+
+import bg_music
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
@@ -16,9 +19,9 @@ VOICE = os.path.join(OUT, "current_voice.wav")
 VIDEO_NO_AUDIO = os.path.join(OUT, "current_video_no_audio.mp4")
 FINAL = os.path.join(OUT, "current_final.mp4")
 THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
+MUSIC_FILE = os.path.join(OUT, "current_bg_music.mp3")
 
 HEDEF_SAAT = 14
-
 
 def run(cmd, name):
     print()
@@ -71,7 +74,6 @@ def run(cmd, name):
     print(f"✅ {name} BAŞARILI")
     print("=" * 60)
 
-
 def run_optional(cmd, name):
     print()
     print("=" * 60)
@@ -114,6 +116,29 @@ def run_optional(cmd, name):
         )
         return False
 
+def add_music_credit(content_path, track):
+    try:
+        with open(content_path, encoding="utf-8") as f:
+            text = f.read()
+
+        credit = bg_music.license_credit(track)
+
+        if "ETİKETLER:" in text:
+            text = text.replace(
+                "ETİKETLER:",
+                credit.strip() + "\n\nETİKETLER:",
+                1
+            )
+        else:
+            text = text.rstrip() + "\n" + credit
+
+        with open(content_path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+        print("✅ Müzik ataf metni açıklamaya eklendi.")
+
+    except Exception as e:
+        print("⚠️ Müzik atıf metni eklenemedi:", str(e))
 
 def main():
 
@@ -321,36 +346,85 @@ def main():
 
     print()
     print(
-        "🔊 5/6 SES VİDEOYA EKLENİYOR..."
+        "🎵 5/6a ARKA PLAN MÜZİĞİ İNDİRİLİYOR..."
     )
 
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            VIDEO_NO_AUDIO,
-            "-i",
-            VOICE,
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-af",
-            "loudnorm=I=-14:TP=-1.5:LRA=11",
-            "-b:a",
-            "128k",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-            FINAL
-        ],
-        "FİNAL VİDEO"
+    music_track = bg_music.download_music(MUSIC_FILE)
+
+    if music_track:
+        add_music_credit(CONTENT, music_track)
+
+    print()
+    print(
+        "🔊 5/6b SES VİDEOYA EKLENİYOR..."
     )
+
+    if music_track and os.path.exists(MUSIC_FILE):
+
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                VIDEO_NO_AUDIO,
+                "-i",
+                VOICE,
+                "-stream_loop",
+                "-1",
+                "-i",
+                MUSIC_FILE,
+                "-filter_complex",
+                "[2:a]volume=0.10[bg];"
+                "[1:a][bg]amix=inputs=2:duration=first:"
+                "dropout_transition=2:weights=1 1[amix];"
+                "[amix]loudnorm=I=-14:TP=-1.5:LRA=11[aout]",
+                "-map",
+                "0:v:0",
+                "-map",
+                "[aout]",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+                FINAL
+            ],
+            "FİNAL VİDEO (MÜZİKLİ)"
+        )
+
+    else:
+
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                VIDEO_NO_AUDIO,
+                "-i",
+                VOICE,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-af",
+                "loudnorm=I=-14:TP=-1.5:LRA=11",
+                "-b:a",
+                "128k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+                FINAL
+            ],
+            "FİNAL VİDEO (MÜZİKSİZ)"
+        )
 
     if not os.path.exists(FINAL):
         raise SystemExit(
@@ -428,6 +502,9 @@ def main():
             VIDEO_NO_AUDIO
         )
 
+    if os.path.exists(MUSIC_FILE):
+        os.remove(MUSIC_FILE)
+
     print()
     print("================================")
     print("🎉 OTOMATİK VİDEO HAZIR")
@@ -456,7 +533,6 @@ def main():
     )
 
     print("================================")
-
 
 if __name__ == "__main__":
     main()
