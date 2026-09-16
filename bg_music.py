@@ -1,5 +1,6 @@
 import os
 import random
+import urllib.parse
 import requests
 
 # =========================================================
@@ -42,9 +43,9 @@ def download_music(dest_path, track=None, timeout=30):
 
     track = track or pick_track()
 
-    url = MUSIC_BASE_URL + requests.utils.quote(track) + ".mp3"
-
     try:
+
+        url = MUSIC_BASE_URL + urllib.parse.quote(track) + ".mp3"
 
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()
@@ -69,4 +70,3 @@ def download_music(dest_path, track=None, timeout=30):
 
 def license_credit(track):
     return MUSIC_CREDIT_TEMPLATE.format(track=track)
-
