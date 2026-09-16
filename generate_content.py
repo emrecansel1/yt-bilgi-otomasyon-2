@@ -9,39 +9,49 @@ import requests
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
+
 # =========================================================
-# GEMINI AYARLARI (COKLU KEY DESTEKLI)
+# AI SAĞLAYICILARI (ÇOKLU KEY + ÇOKLU SAĞLAYICI ZİNCİRİ)
+# GEMINI -> CEREBRAS -> GROQ
 # =========================================================
 
-def _load_gemini_keys():
+def _load_keys(prefix):
     keys = []
 
-    primary = os.environ.get("GEMINI_API_KEY", "").strip()
+    primary = os.environ.get(prefix, "").strip()
     if primary:
         keys.append(primary)
 
     for i in range(2, 7):
-        extra = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
+        extra = os.environ.get(f"{prefix}_{i}", "").strip()
         if extra:
             keys.append(extra)
 
     return keys
 
-GEMINI_API_KEYS = _load_gemini_keys()
+GEMINI_API_KEYS = _load_keys("GEMINI_API_KEY")
+CEREBRAS_API_KEYS = _load_keys("CEREBRAS_API_KEY")
+GROQ_API_KEYS = _load_keys("GROQ_API_KEY")
+
 GEMINI_MODEL = "gemini-3.6-flash"
+CEREBRAS_MODEL = "llama-3.3-70b"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/"
     f"v1beta/models/{GEMINI_MODEL}:generateContent"
 )
+CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-if not GEMINI_API_KEYS:
-    print("❌ GEMINI_API_KEY bulunamadı.")
+if not (GEMINI_API_KEYS or CEREBRAS_API_KEYS or GROQ_API_KEYS):
+    print("❌ Hiçbir AI key bulunamadı (Gemini/Cerebras/Groq).")
     raise SystemExit(1)
 
 print("================================")
-print(f"✅ {len(GEMINI_API_KEYS)} adet GEMINI_API_KEY mevcut.")
-print("🧠 Gemini model:", GEMINI_MODEL)
+print(f"✅ Gemini key sayısı: {len(GEMINI_API_KEYS)}")
+print(f"✅ Cerebras key sayısı: {len(CEREBRAS_API_KEYS)}")
+print(f"✅ Groq key sayısı: {len(GROQ_API_KEYS)}")
 print("================================")
 
 # =========================================================
@@ -125,13 +135,16 @@ NARRATION_KURALLARI = """
 """
 
 # =========================================================
-# GEMINI İSTEĞİ (ÇOKLU KEY DESTEKLİ, KOTA DOLUNCA OTOMATİK GEÇİŞ)
+# AI İSTEK MOTORU (ÇOKLU KEY + ÇOKLU SAĞLAYICI)
 # =========================================================
 
-_exhausted_key_indexes = set()
-_active_key_index = 0
+_exhausted = {"gemini": set(), "cerebras": set(), "groq": set()}
+_active_index = {"gemini": 0, "cerebras": 0, "groq": 0}
 
 def call_gemini(prompt, max_retries=3):
+
+    if not GEMINI_API_KEYS:
+        return None
 
     headers = {
         "Content-Type": "application/json"
@@ -152,24 +165,24 @@ def call_gemini(prompt, max_retries=3):
         }
     }
 
-    global _active_key_index
-
     total_keys = len(GEMINI_API_KEYS)
     keys_tried = 0
 
     while keys_tried < total_keys:
 
-        if _active_key_index in _exhausted_key_indexes:
-            _active_key_index = (_active_key_index + 1) % total_keys
+        idx = _active_index["gemini"]
+
+        if idx in _exhausted["gemini"]:
+            _active_index["gemini"] = (idx + 1) % total_keys
             keys_tried += 1
             continue
 
-        api_key = GEMINI_API_KEYS[_active_key_index]
-        key_label = f"key {_active_key_index + 1}/{total_keys}"
+        api_key = GEMINI_API_KEYS[idx]
+        key_label = f"Gemini key {idx + 1}/{total_keys}"
 
         for attempt in range(1, max_retries + 1):
 
-            print(f"🤖 Gemini isteği ({key_label}) {attempt}/{max_retries}")
+            print(f"🤖 {key_label} isteği {attempt}/{max_retries}")
 
             try:
 
@@ -218,16 +231,8 @@ def call_gemini(prompt, max_retries=3):
 
                 if response.status_code == 429:
 
-                    print(f"⚠️ Gemini 429 ({key_label}): kota veya hız limiti.")
-
-                    try:
-                        error_data = response.json()
-                        print(json.dumps(error_data, ensure_ascii=False, indent=2)[:4000])
-                    except Exception:
-                        print(response.text[:4000])
-
-                    print(f"🔁 {key_label} kotası doldu, sıradaki key'e geçiliyor.")
-                    _exhausted_key_indexes.add(_active_key_index)
+                    print(f"⚠️ {key_label}: kota veya hız limiti.")
+                    _exhausted["gemini"].add(idx)
                     break
 
                 if response.status_code in (500, 502, 503, 504):
@@ -243,7 +248,7 @@ def call_gemini(prompt, max_retries=3):
                     break
 
                 print("❌ Gemini kalıcı hata:")
-                print(response.text[:5000])
+                print(response.text[:3000])
                 return None
 
             except requests.exceptions.Timeout:
@@ -251,9 +256,7 @@ def call_gemini(prompt, max_retries=3):
                 print("⚠️ Gemini timeout.")
 
                 if attempt < max_retries:
-                    wait_time = 10 * attempt
-                    print(f"⏳ {wait_time} saniye bekleniyor...")
-                    time.sleep(wait_time)
+                    time.sleep(10 * attempt)
                     continue
 
                 break
@@ -269,24 +272,161 @@ def call_gemini(prompt, max_retries=3):
                 break
 
         keys_tried += 1
-        _active_key_index = (_active_key_index + 1) % total_keys
+        _active_index["gemini"] = (idx + 1) % total_keys
 
-    print("❌ Tüm Gemini key'leri denendi, içerik üretilemedi.")
+    print("❌ Tüm Gemini key'leri denendi.")
     return None
 
+def _call_openai_compatible(provider, url, model, keys, prompt, max_retries=3):
+
+    if not keys:
+        return None
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.7
+    }
+
+    total_keys = len(keys)
+    keys_tried = 0
+
+    while keys_tried < total_keys:
+
+        idx = _active_index[provider]
+
+        if idx in _exhausted[provider]:
+            _active_index[provider] = (idx + 1) % total_keys
+            keys_tried += 1
+            continue
+
+        api_key = keys[idx]
+        key_label = f"{provider} key {idx + 1}/{total_keys}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        for attempt in range(1, max_retries + 1):
+
+            print(f"🤖 {key_label} isteği {attempt}/{max_retries}")
+
+            try:
+
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=180
+                )
+
+                print(f"{provider} HTTP:", response.status_code)
+
+                if response.status_code == 200:
+
+                    try:
+
+                        data = response.json()
+                        text = data["choices"][0]["message"]["content"]
+
+                        if text and text.strip():
+                            print(f"✅ {provider} cevap verdi.")
+                            return text.strip()
+
+                        print(f"❌ {provider} boş cevap verdi.")
+                        return None
+
+                    except Exception as e:
+
+                        print(f"❌ {provider} cevap okunamadı:", str(e))
+                        print(response.text[:3000])
+                        return None
+
+                if response.status_code == 429:
+
+                    print(f"⚠️ {key_label}: kota veya hız limiti.")
+                    _exhausted[provider].add(idx)
+                    break
+
+                if response.status_code in (500, 502, 503, 504):
+
+                    print(f"⚠️ {provider} sunucu hatası:", response.status_code)
+
+                    if attempt < max_retries:
+                        wait_time = 8 * attempt + random.randint(1, 5)
+                        print(f"⏳ {wait_time} saniye bekleniyor...")
+                        time.sleep(wait_time)
+                        continue
+
+                    break
+
+                print(f"❌ {provider} kalıcı hata:")
+                print(response.text[:3000])
+                return None
+
+            except requests.exceptions.Timeout:
+
+                print(f"⚠️ {provider} timeout.")
+
+                if attempt < max_retries:
+                    time.sleep(10 * attempt)
+                    continue
+
+                break
+
+            except requests.exceptions.RequestException as e:
+
+                print(f"⚠️ {provider} bağlantı hatası:", str(e))
+
+                if attempt < max_retries:
+                    time.sleep(10 * attempt)
+                    continue
+
+                break
+
+        keys_tried += 1
+        _active_index[provider] = (idx + 1) % total_keys
+
+    print(f"❌ Tüm {provider} key'leri denendi.")
+    return None
+
+def call_cerebras(prompt, max_retries=3):
+    return _call_openai_compatible(
+        "cerebras", CEREBRAS_URL, CEREBRAS_MODEL, CEREBRAS_API_KEYS, prompt, max_retries
+    )
+
+def call_groq(prompt, max_retries=3):
+    return _call_openai_compatible(
+        "groq", GROQ_URL, GROQ_MODEL, GROQ_API_KEYS, prompt, max_retries
+    )
+
 # =========================================================
-# AI
+# AI (SAĞLAYICI ZİNCİRİ: GEMINI -> CEREBRAS -> GROQ)
 # =========================================================
 
 def call_ai(prompt):
 
-    result = call_gemini(prompt)
+    for provider_name, fn in (
+        ("Gemini", call_gemini),
+        ("Cerebras", call_cerebras),
+        ("Groq", call_groq)
+    ):
 
-    if result:
-        return result
+        result = fn(prompt)
+
+        if result:
+            return result
+
+        print(f"⚠️ {provider_name} içerik üretemedi, sıradaki sağlayıcıya geçiliyor.")
 
     raise RuntimeError(
-        "Gemini içerik üretemedi."
+        "Hiçbir AI sağlayıcısı (Gemini/Cerebras/Groq) içerik üretemedi."
     )
 
 # =========================================================
@@ -657,13 +797,7 @@ def main():
         f"{BOLUM_SAYISI * BOLUM_BASINA_KELIME} kelime"
     )
     print(
-        "🧠 ANA AI: GEMINI"
-    )
-    print(
-        "🚫 CEREBRAS KULLANILMIYOR"
-    )
-    print(
-        "🚫 NVIDIA KULLANILMIYOR"
+        "🧠 AI ZİNCİRİ: GEMINI -> CEREBRAS -> GROQ"
     )
     print("================================")
     print()
@@ -693,13 +827,13 @@ def main():
             if not raw:
 
                 print(
-                    "⚠️ Gemini boş cevap verdi."
+                    "⚠️ AI boş cevap verdi."
                 )
                 continue
 
             print()
             print(
-                "---- GEMINI KONU CEVABI ----"
+                "---- AI KONU CEVABI ----"
             )
 
             print(
@@ -746,7 +880,7 @@ def main():
     if not topic:
 
         raise SystemExit(
-            "❌ Gemini içerik üretemedi."
+            "❌ İçerik üretilemedi."
         )
 
     # =====================================================
@@ -801,7 +935,7 @@ def main():
         "================================"
     )
     print(
-        "✍️ BÖLÜMLER GEMINI İLE TEK İSTEKTE YAZILIYOR"
+        "✍️ BÖLÜMLER TEK İSTEKTE YAZILIYOR"
     )
     print(
         "================================"
@@ -827,7 +961,7 @@ def main():
                 break
 
             print(
-                "⚠️ Gemini boş cevap verdi, tekrar deneniyor..."
+                "⚠️ AI boş cevap verdi, tekrar deneniyor..."
             )
 
         except Exception as e:
@@ -898,7 +1032,7 @@ def main():
 
         print()
         print(
-            "🏷️ Metadata Gemini ile oluşturuluyor..."
+            "🏷️ Metadata oluşturuluyor..."
         )
 
         metadata_text = generate_metadata(
@@ -961,9 +1095,6 @@ def main():
     print(
         "🎯 Konu:",
         topic
-    )
-    print(
-        "🧠 Üretici: Gemini"
     )
     print(
         "================================"
