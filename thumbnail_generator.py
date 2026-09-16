@@ -1,13 +1,29 @@
 import os
 import re
 import random
+import hashlib
+import urllib.parse
+import requests
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 VISUALS = os.path.join(OUT, "visuals")
 CONTENT = os.path.join(OUT, "current_content.txt")
+TOPIC_FILE = os.path.join(OUT, "current_topic.txt")
 THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
+AI_BACKGROUND = os.path.join(OUT, "current_thumbnail_ai_bg.jpg")
+
+def get_topic():
+    if os.path.exists(TOPIC_FILE):
+        try:
+            with open(TOPIC_FILE, encoding="utf-8") as f:
+                t = f.read().strip()
+                if t:
+                    return t
+        except Exception:
+            pass
+    return None
 
 def get_metadata():
     if not os.path.exists(CONTENT):
@@ -58,6 +74,57 @@ def get_metadata():
             "description": "",
         }
 
+# =========================================================
+# KONUYA ÖZEL AI KAPAK GÖRSELİ (Pollinations AI, ücretsiz)
+# =========================================================
+
+def build_thumbnail_prompt(topic, title):
+    subject = topic or title
+
+    return (
+        f"cinematic dramatic close-up portrait related to: {subject}. "
+        "documentary style, moody dramatic lighting, high detail, "
+        "realistic, intense emotional expression, historical atmosphere, "
+        "shallow depth of field, professional photography, 16:9"
+    )
+
+def generate_ai_thumbnail_background(topic, title):
+    prompt = build_thumbnail_prompt(topic, title)
+
+    safe_prompt = urllib.parse.quote(prompt)
+    seed = int(
+        hashlib.sha256(prompt.encode("utf-8")).hexdigest(), 16
+    ) % 1000000
+
+    url = f"https://image.pollinations.ai/prompt/{safe_prompt}"
+    params = {"width": 1280, "height": 720, "nologo": "true", "seed": seed}
+
+    try:
+        r = requests.get(url, params=params, timeout=90)
+        r.raise_for_status()
+
+        ctype = r.headers.get("content-type", "").lower()
+        if not ctype.startswith("image/"):
+            print("⚠️ AI kapak görseli geçersiz içerik türü döndürdü.")
+            return None
+
+        with open(AI_BACKGROUND, "wb") as f:
+            f.write(r.content)
+
+        if (
+            not os.path.exists(AI_BACKGROUND)
+            or os.path.getsize(AI_BACKGROUND) < 10000
+        ):
+            print("⚠️ AI kapak görseli çok küçük, geçersiz sayılıyor.")
+            return None
+
+        print("✅ Konuya özel AI kapak görseli üretildi.")
+        return AI_BACKGROUND
+
+    except Exception as e:
+        print("⚠️ AI kapak görseli üretilemedi:", str(e))
+        return None
+
 def find_visuals():
     if not os.path.isdir(VISUALS):
         return []
@@ -82,18 +149,6 @@ def choose_best_visual(files):
 
 def make_short_text(title):
     title = re.sub(r"\s+", " ", title).strip()
-
-    replacements = {
-        "Okyanusların Keşfedilmemiş Gizemleri": "OKYANUSLARIN GİZEMİ",
-        "Antik Mısır'ın Çözülemeyen Gizemleri": "MISIR'IN ÇÖZÜLEMEYEN SIRRI",
-        "Albert Einstein'ın Hayatındaki En Şaşırtıcı Olaylar": "EINSTEIN'IN GİZLİ HİKÂYESİ",
-        "Nikola Tesla'nın En Şaşırtıcı İcatları": "TESLA'NIN SIRRI",
-        "İnsan Beyninin Bilinmeyen Özellikleri": "BEYNİMİZİN GİZLİ GÜCÜ",
-    }
-
-    for key, value in replacements.items():
-        if key.lower() in title.lower():
-            return value
 
     words = title.split()
 
@@ -146,16 +201,23 @@ def fit_cover(image):
 
 def make_thumbnail():
 
-    files = find_visuals()
+    topic = get_topic()
+    meta = get_metadata()
 
-    if not files:
-        print("❌ Thumbnail için görsel bulunamadı.")
-        print("🔍 Aranan klasör:", VISUALS)
-        return False
+    source = generate_ai_thumbnail_background(topic, meta["title"])
+    used_ai_bg = source is not None
 
-    source = choose_best_visual(files)
+    if not source:
+        files = find_visuals()
 
-    print("🖼️ Thumbnail görseli:", source)
+        if not files:
+            print("❌ Thumbnail için görsel bulunamadı.")
+            print("🔍 Aranan klasör:", VISUALS)
+            return False
+
+        source = choose_best_visual(files)
+
+    print("🖼️ Thumbnail görseli:", source, "(AI üretimi)" if used_ai_bg else "(sahne görseli)")
 
     image = Image.open(source).convert("RGB")
     image = fit_cover(image)
@@ -191,8 +253,6 @@ def make_thumbnail():
         font=small_font,
         fill=(255, 255, 255, 255)
     )
-
-    meta = get_metadata()
 
     short_text = meta.get("short_text")
 
@@ -241,19 +301,8 @@ def make_thumbnail():
 
     for i, line in enumerate(lines):
 
-        bbox = draw.textbbox(
-            (0, 0),
-            line,
-            font=font,
-            stroke_width=3
-        )
-
-        width = bbox[2] - bbox[0]
-
-        x = 55
-
         draw.text(
-            (x, y),
+            (55, y),
             line,
             font=font,
             fill=(255, 255, 255, 255),
@@ -263,7 +312,7 @@ def make_thumbnail():
 
         if i == 0:
             draw.text(
-                (x, y),
+                (55, y),
                 line,
                 font=font,
                 fill=(255, 220, 40, 255),
@@ -296,6 +345,12 @@ def make_thumbnail():
         quality=95,
         optimize=True
     )
+
+    if os.path.exists(AI_BACKGROUND):
+        try:
+            os.remove(AI_BACKGROUND)
+        except Exception:
+            pass
 
     print("================================")
     print("✅ THUMBNAIL OLUŞTURULDU")
