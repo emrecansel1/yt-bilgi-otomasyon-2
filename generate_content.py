@@ -9,12 +9,25 @@ import requests
 BASE = os.path.expanduser("~/yt_bilgi_uzun")
 OUT = os.path.join(BASE, "output")
 REPO_BASE = os.path.dirname(os.path.abspath(__file__))
-
 # =========================================================
-# GEMINI AYARLARI
+# GEMINI AYARLARI (COKLU KEY DESTEKLI)
 # =========================================================
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+def _load_gemini_keys():
+    keys = []
+
+    primary = os.environ.get("GEMINI_API_KEY", "").strip()
+    if primary:
+        keys.append(primary)
+
+    for i in range(2, 7):
+        extra = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
+        if extra:
+            keys.append(extra)
+
+    return keys
+
+GEMINI_API_KEYS = _load_gemini_keys()
 GEMINI_MODEL = "gemini-3.6-flash"
 
 GEMINI_URL = (
@@ -22,12 +35,12 @@ GEMINI_URL = (
     f"v1beta/models/{GEMINI_MODEL}:generateContent"
 )
 
-if not GEMINI_API_KEY:
+if not GEMINI_API_KEYS:
     print("❌ GEMINI_API_KEY bulunamadı.")
     raise SystemExit(1)
 
 print("================================")
-print("✅ GEMINI_API_KEY mevcut.")
+print(f"✅ {len(GEMINI_API_KEYS)} adet GEMINI_API_KEY mevcut.")
 print("🧠 Gemini model:", GEMINI_MODEL)
 print("================================")
 
@@ -112,10 +125,13 @@ NARRATION_KURALLARI = """
 """
 
 # =========================================================
-# GEMINI İSTEĞİ
+# GEMINI İSTEĞİ (ÇOKLU KEY DESTEKLİ, KOTA DOLUNCA OTOMATİK GEÇİŞ)
 # =========================================================
 
-def call_gemini(prompt, max_retries=5):
+_exhausted_key_indexes = set()
+_active_key_index = 0
+
+def call_gemini(prompt, max_retries=3):
 
     headers = {
         "Content-Type": "application/json"
@@ -136,241 +152,127 @@ def call_gemini(prompt, max_retries=5):
         }
     }
 
-    for attempt in range(1, max_retries + 1):
+    global _active_key_index
 
-        print(
-            f"🤖 Gemini isteği {attempt}/{max_retries}"
-        )
+    total_keys = len(GEMINI_API_KEYS)
+    keys_tried = 0
 
-        try:
+    while keys_tried < total_keys:
 
-            response = requests.post(
-                GEMINI_URL,
-                params={
-                    "key": GEMINI_API_KEY
-                },
-                headers=headers,
-                json=payload,
-                timeout=180
-            )
+        if _active_key_index in _exhausted_key_indexes:
+            _active_key_index = (_active_key_index + 1) % total_keys
+            keys_tried += 1
+            continue
 
-            print(
-                "Gemini HTTP:",
-                response.status_code
-            )
+        api_key = GEMINI_API_KEYS[_active_key_index]
+        key_label = f"key {_active_key_index + 1}/{total_keys}"
 
-            # =================================================
-            # BAŞARILI
-            # =================================================
+        for attempt in range(1, max_retries + 1):
 
-            if response.status_code == 200:
+            print(f"🤖 Gemini isteği ({key_label}) {attempt}/{max_retries}")
 
-                try:
+            try:
 
-                    data = response.json()
+                response = requests.post(
+                    GEMINI_URL,
+                    params={"key": api_key},
+                    headers=headers,
+                    json=payload,
+                    timeout=180
+                )
 
-                    candidates = data.get(
-                        "candidates",
-                        []
-                    )
+                print("Gemini HTTP:", response.status_code)
 
-                    if not candidates:
-                        print(
-                            "❌ Gemini candidates döndürmedi."
-                        )
+                if response.status_code == 200:
+
+                    try:
+
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+
+                        if not candidates:
+                            print("❌ Gemini candidates döndürmedi.")
+                            return None
+
+                        content = candidates[0].get("content", {})
+                        parts = content.get("parts", [])
+
+                        if not parts:
+                            print("❌ Gemini parts döndürmedi.")
+                            return None
+
+                        text = parts[0].get("text", "")
+
+                        if text.strip():
+                            print("✅ Gemini cevap verdi.")
+                            return text.strip()
+
+                        print("❌ Gemini boş cevap verdi.")
                         return None
 
-                    content = candidates[0].get(
-                        "content",
-                        {}
-                    )
+                    except Exception as e:
 
-                    parts = content.get(
-                        "parts",
-                        []
-                    )
-
-                    if not parts:
-                        print(
-                            "❌ Gemini parts döndürmedi."
-                        )
+                        print("❌ Gemini cevap okunamadı:", str(e))
+                        print(response.text[:3000])
                         return None
 
-                    text = parts[0].get(
-                        "text",
-                        ""
-                    )
+                if response.status_code == 429:
 
-                    if text.strip():
+                    print(f"⚠️ Gemini 429 ({key_label}): kota veya hız limiti.")
 
-                        print(
-                            "✅ Gemini cevap verdi."
-                        )
+                    try:
+                        error_data = response.json()
+                        print(json.dumps(error_data, ensure_ascii=False, indent=2)[:4000])
+                    except Exception:
+                        print(response.text[:4000])
 
-                        return text.strip()
+                    print(f"🔁 {key_label} kotası doldu, sıradaki key'e geçiliyor.")
+                    _exhausted_key_indexes.add(_active_key_index)
+                    break
 
-                    print(
-                        "❌ Gemini boş cevap verdi."
-                    )
-                    return None
+                if response.status_code in (500, 502, 503, 504):
 
-                except Exception as e:
+                    print("⚠️ Gemini sunucu hatası:", response.status_code)
 
-                    print(
-                        "❌ Gemini cevap okunamadı:",
-                        str(e)
-                    )
+                    if attempt < max_retries:
+                        wait_time = 8 * attempt + random.randint(1, 5)
+                        print(f"⏳ {wait_time} saniye bekleniyor...")
+                        time.sleep(wait_time)
+                        continue
 
-                    print(
-                        response.text[:3000]
-                    )
+                    break
 
-                    return None
-
-            # =================================================
-            # 429 KOTA
-            # =================================================
-
-            if response.status_code == 429:
-
-                print(
-                    "⚠️ Gemini 429: kota veya hız limiti."
-                )
-
-                try:
-
-                    error_data = response.json()
-
-                    print(
-                        json.dumps(
-                            error_data,
-                            ensure_ascii=False,
-                            indent=2
-                        )[:4000]
-                    )
-
-                except Exception:
-
-                    print(
-                        response.text[:4000]
-                    )
-
-                if attempt < max_retries:
-
-                    wait_time = min(
-                        60,
-                        (
-                            8 * (2 ** (attempt - 1))
-                            + random.randint(1, 5)
-                        )
-                    )
-
-                    print(
-                        f"⏳ {wait_time} saniye bekleniyor..."
-                    )
-
-                    time.sleep(
-                        wait_time
-                    )
-
-                    continue
-
-                print(
-                    "❌ Gemini retry limiti doldu."
-                )
-
+                print("❌ Gemini kalıcı hata:")
+                print(response.text[:5000])
                 return None
 
-            # =================================================
-            # SUNUCU HATALARI
-            # =================================================
+            except requests.exceptions.Timeout:
 
-            if response.status_code in (
-                500,
-                502,
-                503,
-                504
-            ):
-
-                print(
-                    "⚠️ Gemini sunucu hatası:",
-                    response.status_code
-                )
+                print("⚠️ Gemini timeout.")
 
                 if attempt < max_retries:
-
-                    wait_time = (
-                        8 * attempt
-                        + random.randint(1, 5)
-                    )
-
-                    print(
-                        f"⏳ {wait_time} saniye bekleniyor..."
-                    )
-
-                    time.sleep(
-                        wait_time
-                    )
-
+                    wait_time = 10 * attempt
+                    print(f"⏳ {wait_time} saniye bekleniyor...")
+                    time.sleep(wait_time)
                     continue
 
-                return None
+                break
 
-            # =================================================
-            # DİĞER HATALAR
-            # =================================================
+            except requests.exceptions.RequestException as e:
 
-            print(
-                "❌ Gemini kalıcı hata:"
-            )
+                print("⚠️ Gemini bağlantı hatası:", str(e))
 
-            print(
-                response.text[:5000]
-            )
+                if attempt < max_retries:
+                    time.sleep(10 * attempt)
+                    continue
 
-            return None
+                break
 
-        except requests.exceptions.Timeout:
+        keys_tried += 1
+        _active_key_index = (_active_key_index + 1) % total_keys
 
-            print(
-                "⚠️ Gemini timeout."
-            )
-
-            if attempt < max_retries:
-
-                wait_time = 10 * attempt
-
-                print(
-                    f"⏳ {wait_time} saniye bekleniyor..."
-                )
-
-                time.sleep(
-                    wait_time
-                )
-
-                continue
-
-            return None
-
-        except requests.exceptions.RequestException as e:
-
-            print(
-                "⚠️ Gemini bağlantı hatası:",
-                str(e)
-            )
-
-            if attempt < max_retries:
-
-                time.sleep(
-                    10 * attempt
-                )
-
-                continue
-
-            return None
-
+    print("❌ Tüm Gemini key'leri denendi, içerik üretilemedi.")
     return None
-
 
 # =========================================================
 # AI
@@ -386,7 +288,6 @@ def call_ai(prompt):
     raise RuntimeError(
         "Gemini içerik üretemedi."
     )
-
 
 # =========================================================
 # GEÇMİŞ
@@ -420,7 +321,6 @@ def load_history():
 
     return []
 
-
 def save_history(history):
 
     with open(
@@ -435,7 +335,6 @@ def save_history(history):
             ensure_ascii=False,
             indent=2
         )
-
 
 # =========================================================
 # KONU KONTROLÜ
@@ -462,7 +361,6 @@ def is_valid_topic(topic):
         return False
 
     return True
-
 
 # =========================================================
 # KONU + BÖLÜM PLANI
@@ -556,7 +454,6 @@ Başka açıklama yazma.
 
     return call_ai(prompt)
 
-
 def parse_topic_outline(raw):
 
     topic = ""
@@ -601,34 +498,13 @@ def parse_topic_outline(raw):
 
     return topic, chapters
 
-
 # =========================================================
-# BÖLÜM ÜRETİMİ
+# BÖLÜM ÜRETİMİ (TÜM BÖLÜMLER TEK İSTEKTE - KOTA TASARRUFU)
 # =========================================================
 
-def generate_chapter(
-    topic,
-    outline_text,
-    chapter_line,
-    chapter_index,
-    total_chapters,
-    previous_tail
-):
+BOLUM_AYIRICI = "===BOLUM_AYIRICI==="
 
-    continuation = ""
-
-    if previous_tail:
-
-        continuation = f"""
-ÖNCEKİ BÖLÜMÜN SON KISMI:
-
-{previous_tail}
-
-Bu bölüm buradan doğal biçimde
-devam etmeli.
-
-Önceki anlatımı tekrar etme.
-"""
+def generate_all_chapters(topic, outline_text, chapters):
 
     prompt = f"""
 Sen "DAHİLER VE KEŞİFLER" adlı
@@ -643,13 +519,16 @@ BÖLÜM PLANI:
 
 {outline_text}
 
-ŞU ANDA YAZILAN BÖLÜM:
+Bu belgeselin TÜM {len(chapters)} bölümünü
+TEK SEFERDE, sırasıyla ve birbirinin
+doğal devamı olacak şekilde yaz.
 
-{chapter_line}
-
-Yaklaşık {BOLUM_BASINA_KELIME}
+Her bölüm yaklaşık {BOLUM_BASINA_KELIME}
 kelimelik akıcı bir Türkçe belgesel
-anlatımı oluştur.
+anlatımı olmalı.
+
+Bölümler arasında anlatım kopmasın,
+aynı bilgiyi veya cümleyi tekrar etme.
 
 Kişinin gerçek hayatını anlat.
 
@@ -670,9 +549,9 @@ Bilgi uydurma.
 
 {NARRATION_KURALLARI}
 
-{continuation}
+ÇOK ÖNEMLİ - ÇIKTI FORMATI:
 
-ÇIKTI SADECE SESLENDİRME METNİ OLSUN.
+Her bölümün SADECE seslendirme metnini yaz.
 
 Bölüm başlığı yazma.
 
@@ -690,12 +569,23 @@ Parantez kullanma.
 
 Köşeli parantez kullanma.
 
+Her bölümden sonra, bir sonraki bölüm
+başlamadan önce TAM OLARAK şu satırı
+tek başına bir satıra yaz:
+
+{BOLUM_AYIRICI}
+
+Son bölümden sonra bu satırı yazma.
+
+Toplam {len(chapters)} bölüm ve aralarında
+{len(chapters) - 1} adet "{BOLUM_AYIRICI}"
+satırı olmalı.
+
 Metin doğrudan TTS sistemine
 gönderilecektir.
 """
 
     return call_ai(prompt)
-
 
 # =========================================================
 # METADATA
@@ -728,7 +618,6 @@ Sadece bu formatı yaz.
 
     return call_ai(prompt)
 
-
 def default_metadata(topic):
 
     return f"""
@@ -744,7 +633,6 @@ bilim, tarih, belgesel, bilim insanları,
 keşif, mucitler, dahiler, bilgi,
 bilim tarihi, tarih belgeseli
 """
-
 
 # =========================================================
 # ANA PROGRAM
@@ -905,7 +793,7 @@ def main():
         )
 
     # =====================================================
-    # BÖLÜMLERİ ÜRET
+    # BÖLÜMLERİ ÜRET (TEK İSTEKTE - KOTA TASARRUFU)
     # =====================================================
 
     print()
@@ -913,7 +801,7 @@ def main():
         "================================"
     )
     print(
-        "✍️ BÖLÜMLER GEMINI İLE YAZILIYOR"
+        "✍️ BÖLÜMLER GEMINI İLE TEK İSTEKTE YAZILIYOR"
     )
     print(
         "================================"
@@ -923,64 +811,57 @@ def main():
         chapters
     )
 
-    script_parts = []
+    raw_chapters = None
 
-    previous_tail = ""
-
-    for index, chapter in enumerate(
-        chapters,
-        1
-    ):
-
-        print()
-        print(
-            f"📝 BÖLÜM {index}/{len(chapters)}"
-        )
+    for attempt in range(1, 3):
 
         try:
 
-            chapter_text = generate_chapter(
+            raw_chapters = generate_all_chapters(
                 topic,
                 outline_text,
-                chapter,
-                index,
-                len(chapters),
-                previous_tail
+                chapters
+            )
+
+            if raw_chapters:
+                break
+
+            print(
+                "⚠️ Gemini boş cevap verdi, tekrar deneniyor..."
             )
 
         except Exception as e:
 
             print(
-                f"❌ Bölüm {index} üretilemedi:"
-            )
-
-            print(
+                "⚠️ Bölüm üretim hatası:",
                 str(e)
             )
 
-            raise SystemExit(1)
+        if attempt < 2:
+            time.sleep(10)
 
-        if not chapter_text:
+    if not raw_chapters:
 
-            raise SystemExit(
-                f"❌ Bölüm {index} boş geldi."
-            )
-
-        word_count = len(
-            chapter_text.split()
+        raise SystemExit(
+            "❌ Bölümler üretilemedi."
         )
 
+    script_parts = [
+        part.strip()
+        for part in raw_chapters.split(BOLUM_AYIRICI)
+        if part.strip()
+    ]
+
+    if len(script_parts) < len(chapters):
         print(
-            f"✅ Bölüm {index}: "
-            f"{word_count} kelime"
+            f"⚠️ Beklenen {len(chapters)} bölüm yerine "
+            f"{len(script_parts)} bölüm geldi, yine de devam ediliyor."
         )
 
-        script_parts.append(
-            chapter_text.strip()
-        )
-
-        previous_tail = (
-            chapter_text[-700:]
+    for index, part in enumerate(script_parts, 1):
+        word_count = len(part.split())
+        print(
+            f"✅ Bölüm {index}: {word_count} kelime"
         )
 
     # =====================================================
@@ -1087,7 +968,6 @@ def main():
     print(
         "================================"
     )
-
 
 if __name__ == "__main__":
     main()
