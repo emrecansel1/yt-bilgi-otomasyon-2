@@ -36,8 +36,8 @@ CEREBRAS_API_KEYS = _load_keys("CEREBRAS_API_KEY")
 GROQ_API_KEYS = _load_keys("GROQ_API_KEY")
 
 GEMINI_MODEL = "gemini-3.6-flash"
-CEREBRAS_MODEL = "llama-3.3-70b"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+CEREBRAS_MODEL = "gpt-oss-120b"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/"
