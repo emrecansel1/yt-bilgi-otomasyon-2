@@ -9,11 +9,11 @@ VISUALS = os.path.join(OUT, "visuals")
 CONTENT = os.path.join(OUT, "current_content.txt")
 THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 
-
 def get_metadata():
     if not os.path.exists(CONTENT):
         return {
             "title": "BUNU BİLİYOR MUYDUN?",
+            "short_text": "GİZLİ GERÇEK",
             "description": "",
         }
 
@@ -24,7 +24,7 @@ def get_metadata():
         title = "BUNU BİLİYOR MUYDUN?"
 
         match = re.search(
-            r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nAÇIKLAMA:)",
+            r"BAŞLIK:\s*\n?(.+?)(?:\n\s*\n|\nKISA_BASLIK:|\nAÇIKLAMA:)",
             text,
             re.DOTALL | re.IGNORECASE
         )
@@ -32,17 +32,31 @@ def get_metadata():
         if match:
             title = re.sub(r"\s+", " ", match.group(1)).strip()
 
+        short_text = None
+
+        short_match = re.search(
+            r"KISA_BASLIK:\s*\n?(.+?)(?:\n\s*\n|\nAÇIKLAMA:)",
+            text,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        if short_match:
+            short_text = re.sub(
+                r"\s+", " ", short_match.group(1)
+            ).strip().upper()
+
         return {
             "title": title,
+            "short_text": short_text,
             "description": "",
         }
 
     except Exception:
         return {
             "title": "BUNU BİLİYOR MUYDUN?",
+            "short_text": "GİZLİ GERÇEK",
             "description": "",
         }
-
 
 def find_visuals():
     if not os.path.isdir(VISUALS):
@@ -58,7 +72,6 @@ def find_visuals():
 
     return files
 
-
 def choose_best_visual(files):
     if not files:
         return None
@@ -66,7 +79,6 @@ def choose_best_visual(files):
     candidates = files[:min(len(files), 8)]
 
     return random.choice(candidates)
-
 
 def make_short_text(title):
     title = re.sub(r"\s+", " ", title).strip()
@@ -92,7 +104,6 @@ def make_short_text(title):
 
     return result.upper()
 
-
 def get_font(size):
     paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -104,7 +115,6 @@ def get_font(size):
             return ImageFont.truetype(path, size)
 
     return ImageFont.load_default()
-
 
 def fit_cover(image):
     target_w = 1280
@@ -133,7 +143,6 @@ def fit_cover(image):
             top + target_h
         )
     )
-
 
 def make_thumbnail():
 
@@ -183,10 +192,14 @@ def make_thumbnail():
         fill=(255, 255, 255, 255)
     )
 
-    title = get_metadata()["title"]
-    short_text = make_short_text(title)
+    meta = get_metadata()
 
-    font = get_font(72)
+    short_text = meta.get("short_text")
+
+    if not short_text:
+        short_text = make_short_text(meta["title"])
+
+    font = get_font(78)
 
     while draw.textbbox(
         (0, 0),
@@ -258,7 +271,7 @@ def make_thumbnail():
                 stroke_fill=(0, 0, 0, 255)
             )
 
-        y += 90
+        y += 95
 
     badge_font = get_font(28)
 
@@ -293,7 +306,5 @@ def make_thumbnail():
 
     return True
 
-
 if __name__ == "__main__":
     make_thumbnail()
-            
