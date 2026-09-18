@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import json
-import re
 from datetime import datetime
 
 import bg_music
@@ -21,7 +20,9 @@ FINAL = os.path.join(OUT, "current_final.mp4")
 THUMBNAIL = os.path.join(OUT, "current_thumbnail.jpg")
 MUSIC_FILE = os.path.join(OUT, "current_bg_music.mp3")
 
-HEDEF_SAAT = 14
+# Workflow cron'u 06:20 UTC'de tetikleniyor.
+# Job env'inde TZ=Europe/Istanbul ayarlı, bu da 09:xx Istanbul saatine denk gelir.
+HEDEF_SAAT = 9
 
 def run(cmd, name):
     print()
