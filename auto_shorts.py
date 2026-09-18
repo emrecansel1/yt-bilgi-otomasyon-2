@@ -20,7 +20,10 @@ FINAL = os.path.join(OUT, "shorts_final.mp4")
 META_FILE = os.path.join(OUT, "shorts_meta.json")
 MUSIC_FILE = os.path.join(OUT, "shorts_bg_music.mp3")
 
-HEDEF_SAATLER = {9, 12, 15, 18, 21}
+# Workflow cron'u 00:15/08:15/16:15 UTC'de tetikleniyor.
+# Job env'inde TZ=Europe/Istanbul ayarlı, bu da 03:xx/11:xx/19:xx
+# Istanbul saatine denk gelir.
+HEDEF_SAATLER = {3, 11, 19}
 
 def run(cmd, name):
     print()
