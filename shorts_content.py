@@ -59,22 +59,25 @@ ORNEK_KONULAR = """
 - Semmelweis'in el yıkama önerisi yüzünden tımarhaneye kapatılması
 - Nikola Tesla'nın sefalet içinde otel odasında ölümü
 - Alan Turing'in savaşı kazandırıp sonra devlet tarafından yok edilmesi
-- Rosalind Franklin'in DNA keşfindeki payının çalınması
 - Marie Curie'nin kendi keşfettiği radyasyondan ölümü
-- Ludwig Boltzmann'ın bilim camiası tarafından dışlanıp intihar etmesi
+- Titanik faciasından sağ kurtulan bir kadının aynı şirketin 3 gemi
+  kazasından da sağ çıkması
+- Julius Sezar'ın korsanlar tarafından kaçırılıp sonra o korsanları
+  yakalatıp idam ettirmesi
+- Bir Japon askerinin 2. Dünya Savaşı'nın bittiğini 29 yıl boyunca
+  bilmeden ormanda savaşmaya devam etmesi
+- Ortaçağ Avrupa'sında hayvanların mahkemede resmen yargılanması
+- Napolyon'un bir tavşan sürüsü tarafından "saldırıya uğrayıp"
+  kaçmak zorunda kalması
+- Büyük İskender'in fethettiği topraklardan sonra ağladığı söylenen an
+- Pompeii'de zamanın donduğu son anlar
+- Çernobil faciasının ilk saatlerinde yaşanan kahramanlık
+- Eski Mısır'da firavunların gizli mezar tuzakları
+- Antik Roma'da bir imparatorun kendi atını senatör yapması
+- Soğuk Savaş'ta neredeyse yanlışlıkla başlayan bir nükleer felaket
+- Rosalind Franklin'in DNA keşfindeki payının çalınması
 - Barbara McClintock'un keşfinin 30 yıl sonra kabul edilmesi
-- Galileo'nun kilise tarafından yargılanıp susturulması
-- Évariste Galois'nın 20 yaşında düelloda ölmesi
-- Vera Rubin'in karanlık madde keşfinin yıllarca göz ardı edilmesi
-- Jocelyn Bell Burnell'in pulsar keşfinde göz ardı edilmesi
-- Emmy Noether'in kadın olduğu için üniversitede maaş alamaması
-- Ada Lovelace'in ilk programcı olarak tanınmadan ölmesi
-- Katherine Johnson'un ırkçılığa rağmen NASA'da yükselmesi
 - Srinivasa Ramanujan'ın İngiltere'de yalnızlıktan hastalanması
-- Kurt Gödel'in paranoyadan açlıktan ölmesi
-- Antoine Lavoisier'in kimyayı bilim yapıp sonra idam edilmesi
-- Einstein'ın kimsenin bilmediği acı bir kararı
-- Newton'un gizli simya çalışmaları
 """
 
 def clean_text(text):
@@ -319,18 +322,21 @@ Tek istekte hem konuyu seç hem de metni yaz.
 
 KANAL NİŞİ:
 
-Kanal sadece bilim insanlarının, mucitlerin ve kaşiflerin
-İNSANİ VE DRAMATİK HİKAYELERİNE odaklanıyor.
+Kanal, tarih boyunca yaşanmış GERÇEK, ŞAŞIRTICI ve İLGİNÇ
+olaylara odaklanıyor. Sadece bilim insanlarının hikayeleriyle
+sınırlı kalma.
 
-Hikayelerde haksızlık, trajedi, mücadele, görmezden gelinme,
-yalnızlık, başarısızlık veya geç gelen başarı gibi güçlü
-insani unsurlar bulunabilir.
+Konu şunlardan herhangi biri olabilir:
+- Bilim insanlarının/mucitlerin dramatik hikayeleri
+- Tarihte yaşanmış akıl almaz tesadüfler veya olaylar
+- Az bilinen ama gerçek tarihi gerçekler
+- Şaşırtıcı arkeolojik/tarihi keşifler
+- Tarihin garip ama doğrulanabilir anları
+- Unutulmuş ama etkileyici olaylar
 
-Konu seçerken hem tanınan isimleri (Einstein, Tesla, Newton
-gibi, herkesin bilmediği bir yönüyle) hem de az bilinen
-çarpıcı hikayeleri dengeli kullan.
+Konuyu SEN seç, geniş bir yelpazeden şaşırtıcı bir hikaye bul.
 
-ÖRNEK KONU TARZLARI:
+ÖRNEK KONU TARZLARI (stil için, birebir kopyalama):
 {ORNEK_KONULAR}
 
 DAHA ÖNCE KULLANILAN KONULAR:
@@ -339,8 +345,8 @@ DAHA ÖNCE KULLANILAN KONULAR:
 KESİNLİKLE bu listedeki konuları veya çok benzerlerini seçme.
 
 KONU:
-Gerçek ve doğrulanabilir tek bir bilim insanı, mucit veya
-kaşif hikayesi seç.
+Gerçek ve doğrulanabilir, şaşırtıcı bir tarihi olay/kişi/an seç.
+Bilgi uydurma, sadece gerçek olayları kullan.
 
 METİN:
 40-75 kelime arasında Türkçe Shorts metni yaz.
@@ -356,8 +362,8 @@ BAŞLIK:
 Güçlü bir merak açığı (curiosity gap) yaratan, tıklatmaya
 zorlayan ama yanıltıcı olmayan Türkçe başlık yaz.
 Şu tarz kalıplardan ilham al (birebir kopyalama):
-"Bilim Dünyasının Sakladığı Gerçek", "Kimsenin Bilmediği
-Hikaye", "Onu Çıldırtan Keşif" gibi.
+"Tarihin Sakladığı Gerçek", "Kimsenin Bilmediği Olay",
+"Akıl Almaz Tesadüf" gibi.
 Kısa, çarpıcı, tek satır.
 
 AÇIKLAMA:
