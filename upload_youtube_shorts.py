@@ -207,11 +207,14 @@ def upload():
         tags = [
             "bilgi",
             "bilim",
-            "shorts"
+            "bilinmeyenler"
         ]
 
-    if "shorts" not in [t.lower() for t in tags]:
-        tags.append("shorts")
+    if "shorts" in [t.lower() for t in tags]:
+        tags = [t for t in tags if t.lower() != "shorts"]
+
+    if "bilinmeyenler" not in [t.lower() for t in tags]:
+        tags.append("bilinmeyenler")
 
     privacy = youtube_config.get(
         "privacy",
