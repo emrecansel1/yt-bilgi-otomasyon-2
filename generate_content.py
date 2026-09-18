@@ -106,6 +106,14 @@ ORNEK_KONULAR = """
 - Isaac Newton'un simya takıntısı ve gizli çalışmaları
 - Einstein'ın görelilik kuramına giden yalnız yılları
 - Darwin'in kilise ile yaşadığı fikir çatışması
+- Titanik faciasından sağ kurtulan bir kadının aynı şirketin
+  3 gemi kazasından da sağ çıkması
+- Bir Japon askerinin 2. Dünya Savaşı'nın bittiğini 29 yıl
+  boyunca bilmeden ormanda savaşmaya devam etmesi
+- Pompeii'de zamanın donduğu son anlar
+- Çernobil faciasının ilk saatlerinde yaşanan kahramanlık
+- Soğuk Savaş'ta neredeyse yanlışlıkla başlayan nükleer felaket
+- Antik Roma'da bir imparatorun kendi atını senatör yapması
 """
 
 # =========================================================
@@ -529,29 +537,43 @@ editörüsün.
 
 KANAL NİŞİ:
 
-Bilim insanlarının, mucitlerin ve
-kaşiflerin gerçek ve dramatik hayat
-hikayeleri.
+Kanal, tarih boyunca yaşanmış GERÇEK,
+ŞAŞIRTICI ve İLGİNÇ hikayelere
+odaklanıyor. Sadece bilim insanlarının
+hikayeleriyle sınırlı kalma.
+
+Konu şunlardan herhangi biri olabilir:
+
+- Bilim insanlarının, mucitlerin ve
+  kaşiflerin dramatik hayat hikayeleri
+- Tarihte yaşanmış akıl almaz
+  tesadüfler veya olaylar
+- Az bilinen ama gerçek tarihi
+  gerçekler
+- Şaşırtıcı arkeolojik/tarihi
+  keşifler
+- Tarihin garip ama doğrulanabilir
+  anları
 
 Kuru bilgi anlatımı istemiyorum.
 
 İzleyicide merak ve duygusal bağ
-oluşturacak gerçek bir insan hikayesi
-seç.
+oluşturacak gerçek bir hikaye seç.
 
 Mücadele, haksızlık, yalnızlık,
 başarısızlık, geç tanınma, keşif,
-zafer veya trajedi gibi gerçek
-unsurlar kullanılabilir.
+tesadüf, zafer veya trajedi gibi
+gerçek unsurlar kullanılabilir.
 
-Konuyu seçerken hem çok tanınan
-isimleri (Einstein, Tesla, Newton,
-Darwin, Curie gibi) hem de daha az
-bilinen ama çarpıcı hikayeleri
-dengeli şekilde kullan. Tanınan bir
-isim seçersen, herkesin bildiği
-genel hikayeyi değil, az bilinen
-ve şaşırtıcı bir yönünü anlat.
+Bilim insanı konusu seçersen, hem
+çok tanınan isimleri (Einstein,
+Tesla, Newton, Darwin, Curie gibi)
+hem de daha az bilinen ama çarpıcı
+hikayeleri dengeli şekilde kullan.
+Tanınan bir isim seçersen, herkesin
+bildiği genel hikayeyi değil, az
+bilinen ve şaşırtıcı bir yönünü
+anlat.
 
 ÖRNEK KONU TARZLARI:
 
@@ -566,14 +588,14 @@ birini kesinlikle seçme.
 
 YENİ KONU:
 
-Gerçek bir bilim insanı, mucit veya
-kaşif seç.
+Gerçek ve doğrulanabilir bir konu
+seç (bilim insanı/mucit/kaşif veya
+genel tarihi bir olay/kişi/an
+olabilir).
 
 Diktatör veya savaş suçlusu seçme.
 
-Savaş tarihi seçme.
-
-Genel tarih konusu seçme.
+Genel savaş tarihi seçme.
 
 Günlük eşya konusu seçme.
 
@@ -582,12 +604,14 @@ doldurabilecek kadar zengin bir
 hikaye seç.
 
 Bu istekte hem konuyu hem de
-5 bölümlük planı oluştur.
+{BOLUM_SAYISI} bölümlük planı
+oluştur.
 
 HER BÖLÜM:
 
-Yaklaşık 1100 kelimelik anlatımı
-doldurabilecek içerik içermeli.
+Yaklaşık {BOLUM_BASINA_KELIME}
+kelimelik anlatımı doldurabilecek
+içerik içermeli.
 
 ÇIKTI TAM OLARAK ŞU FORMATTA OLSUN:
 
@@ -682,11 +706,9 @@ anlatımı olmalı.
 Bölümler arasında anlatım kopmasın,
 aynı bilgiyi veya cümleyi tekrar etme.
 
-Kişinin gerçek hayatını anlat.
+Konunun gerçek arka planını anlat.
 
-Bilimsel çalışmalarını anlat.
-
-Karşılaştığı gerçek sorunları anlat.
+Karşılaşılan gerçek sorunları anlat.
 
 İnsan tarafını hissettir.
 
@@ -898,13 +920,13 @@ def main():
             if (
                 is_valid_topic(candidate_topic)
                 and candidate_topic not in history
-                and len(candidate_chapters) >= 5
+                and len(candidate_chapters) >= BOLUM_SAYISI
             ):
 
                 topic = candidate_topic
 
                 chapters = (
-                    candidate_chapters[:5]
+                    candidate_chapters[:BOLUM_SAYISI]
                 )
 
                 break
